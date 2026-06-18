@@ -1,0 +1,132 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets    = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main          = all_sheets["Car Sales.xlsx - car_data"]
+dim_date      = all_sheets["Dim_Date"]
+dim_vehicle   = all_sheets["Dim_Vehicle"]
+dim_customer  = all_sheets["Dim_Customer"]
+dim_dealer    = all_sheets["Dim_Dealer"]
+dim_region    = all_sheets["Dim_Region"]
+dim_salesexec = all_sheets["Dim_SalesExecutive"]
+dim_channel   = all_sheets["Dim_Channel"]
+
+np.random.seed(42)
+n = len(main)
+
+# ── 1. DateKey — match Date string ───────────────────────────────────────────
+main["Date"]     = pd.to_datetime(main["Date"]).dt.strftime("%Y-%m-%d")
+dim_date["Date"] = pd.to_datetime(dim_date["Date"]).dt.strftime("%Y-%m-%d")
+date_map  = dict(zip(dim_date["Date"], dim_date["DateKey"]))
+date_keys = main["Date"].map(date_map).fillna(dim_date["DateKey"].iloc[0]).astype(int)
+
+# ── 2. VehicleKey — match Brand+Model → 101,102 etc ─────────────────────────
+vehicle_lookup = {}
+for _, row in dim_vehicle.iterrows():
+    vehicle_lookup[(row["Brand"], row["Model"])] = int(row["VehicleKey"])
+
+vehicle_keys = []
+for _, row in main.iterrows():
+    key = vehicle_lookup.get((row["Company"], row["Model"]))
+    if key is None:
+        key = int(dim_vehicle["VehicleKey"].iloc[0])
+    vehicle_keys.append(key)
+vehicle_keys = pd.Series(vehicle_keys)
+
+# ── 3. CustomerKey — row-wise match → 201,202 etc ────────────────────────────
+# Dim_Customer was built in same row order as main
+customer_keys = dim_customer["CustomerKey"].values  # 201,202,203...
+
+# ── 4. DealerKey — match DealerName → 301,302 etc ────────────────────────────
+dealer_map  = dict(zip(dim_dealer["DealerName"], dim_dealer["DealerKey"].astype(int)))
+dealer_keys = main["Dealer_Name"].map(dealer_map)
+dealer_keys = dealer_keys.fillna(int(dim_dealer["DealerKey"].iloc[0])).astype(int)
+
+# ── 5. RegionKey — DealerKey → State → RegionKey → 401,402 etc ───────────────
+dealer_to_city = dict(zip(dim_dealer["DealerName"], dim_dealer["City"]))
+city_to_state  = dict(zip(dim_dealer["City"], dim_dealer["State"]))
+state_to_region= dict(zip(dim_region["State"], dim_region["RegionKey"].astype(int)))
+
+region_keys = (
+    main["Dealer_Name"]
+    .map(dealer_to_city)
+    .map(city_to_state)
+    .map(state_to_region)
+    .fillna(int(dim_region["RegionKey"].iloc[0]))
+    .astype(int)
+)
+
+# ── 6. SalesExecKey — pick exec from same dealer → 501,502 etc ───────────────
+# Build dict: DealerKey → list of SalesExecKeys
+dealer_exec_map = {}
+for dk, grp in dim_salesexec.groupby("DealerKey"):
+    dealer_exec_map[int(dk)] = grp["SalesExecKey"].astype(int).tolist()
+
+salesexec_keys = []
+for dk in dealer_keys:
+    execs = dealer_exec_map.get(int(dk), [int(dim_salesexec["SalesExecKey"].iloc[0])])
+    salesexec_keys.append(np.random.choice(execs))
+salesexec_keys = pd.Series(salesexec_keys)
+
+# ── 7. ChannelKey — random from Dim_Channel → 701,702 etc ────────────────────
+channel_pool = dim_channel["ChannelKey"].astype(int).values
+channel_keys = np.random.choice(channel_pool, size=n)
+
+# ── 8. UnitsSold, SaleAmount, Discount ───────────────────────────────────────
+sale_amount = main["Price ($)"].values
+discount    = (sale_amount * np.random.uniform(0, 0.15, size=n)).round(2)
+
+# ── Build fact table ──────────────────────────────────────────────────────────
+fact_vehicle_sales = pd.DataFrame({
+    "SalesKey":     range(9001, 9001 + n),
+    "DateKey":      date_keys.values,
+    "VehicleKey":   vehicle_keys.values,
+    "CustomerKey":  customer_keys,
+    "DealerKey":    dealer_keys.values,
+    "RegionKey":    region_keys.values,
+    "SalesExecKey": salesexec_keys.values,
+    "ChannelKey":   channel_keys,
+    "UnitsSold":    1,
+    "SaleAmount":   sale_amount,
+    "Discount":     discount,
+})
+
+# ── Validation ────────────────────────────────────────────────────────────────
+print("=== KEY SYNC VALIDATION ===")
+print(f"VehicleKey  range: {fact_vehicle_sales['VehicleKey'].min()} – {fact_vehicle_sales['VehicleKey'].max()}  (expected 101–{101+len(dim_vehicle)-1})")
+print(f"CustomerKey range: {fact_vehicle_sales['CustomerKey'].min()} – {fact_vehicle_sales['CustomerKey'].max()}  (expected 201–{201+len(dim_customer)-1})")
+print(f"DealerKey   range: {fact_vehicle_sales['DealerKey'].min()} – {fact_vehicle_sales['DealerKey'].max()}  (expected 301–{301+len(dim_dealer)-1})")
+print(f"RegionKey   range: {fact_vehicle_sales['RegionKey'].min()} – {fact_vehicle_sales['RegionKey'].max()}  (expected 401–{401+len(dim_region)-1})")
+print(f"SalesExecKey range:{fact_vehicle_sales['SalesExecKey'].min()} – {fact_vehicle_sales['SalesExecKey'].max()}  (expected 501–{501+len(dim_salesexec)-1})")
+print(f"ChannelKey  range: {fact_vehicle_sales['ChannelKey'].min()} – {fact_vehicle_sales['ChannelKey'].max()}  (expected 701–{701+len(dim_channel)-1})")
+print(f"DateKey nulls:     {fact_vehicle_sales['DateKey'].isna().sum()}")
+print(f"\nTotal rows: {len(fact_vehicle_sales):,}")
+
+# ── Write to sheet ────────────────────────────────────────────────────────────
+wb = load_workbook(LOCAL_FILE)
+
+if "Fact_VehicleSales" not in wb.sheetnames:
+    wb.create_sheet("Fact_VehicleSales")
+
+ws = wb["Fact_VehicleSales"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(fact_vehicle_sales.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(fact_vehicle_sales.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("\nDone! Fact_VehicleSales saved.")
+print(fact_vehicle_sales.head(10).to_string())
