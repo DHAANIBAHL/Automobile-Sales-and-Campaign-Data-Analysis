@@ -1,0 +1,58 @@
+!pip install faker -q
+
+import pandas as pd
+import numpy as np
+from faker import Faker
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets  = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main        = all_sheets["Car Sales.xlsx - car_data"]
+dim_dealer  = all_sheets["Dim_Dealer"]
+
+fake = Faker("en_US")
+Faker.seed(42)
+np.random.seed(42)
+
+n_per_dealer = 3
+rows = []
+key = 501
+
+for _, dealer in dim_dealer.iterrows():
+    for _ in range(n_per_dealer):
+        rows.append({
+            "SalesExecKey":  key,
+            "SalesExecName": fake.name(),
+            "Experience":    np.random.randint(1, 21),
+            "DealerKey":     int(dealer["DealerKey"]),
+        })
+        key += 1
+
+dim_salesexec = pd.DataFrame(rows)
+
+wb = load_workbook(LOCAL_FILE)
+
+if "Dim_SalesExecutive" not in wb.sheetnames:
+    wb.create_sheet("Dim_SalesExecutive")
+
+ws = wb["Dim_SalesExecutive"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_salesexec.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_salesexec.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_salesexec.to_string())
+print(f"\nTotal sales executives: {len(dim_salesexec)}")
