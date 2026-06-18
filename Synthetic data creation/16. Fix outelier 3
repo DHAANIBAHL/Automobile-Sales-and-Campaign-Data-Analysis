@@ -1,0 +1,50 @@
+import pandas as pd
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+dim_channel_improved = pd.DataFrame([
+    # ChannelKey, ChannelName, ChannelType, Medium, AvgCPL_USD, ConversionRate_pct, ReachScope, CostTier, IsDigital, IsTracked
+    (701, "Google Search",             "Paid Digital",   "Online",  45, 18, "National", "High",   "Yes", "Yes"),
+    (702, "Facebook/Instagram",        "Paid Social",    "Online",  28, 13, "National", "Medium", "Yes", "Yes"),
+    (703, "YouTube",                   "Video Ad",       "Online",  18, 10, "National", "Medium", "Yes", "Yes"),
+    (704, "Email Campaign",            "Direct Digital", "Online",  10, 20, "Database", "Low",    "Yes", "Yes"),
+    (705, "Showroom Walk-in",          "Physical",       "Offline", 65, 38, "Local",    "High",   "No",  "Partial"),
+    (706, "Auto Expo / Event",         "Event",          "Offline", 80, 30, "Regional", "High",   "No",  "Partial"),
+    (707, "TV Advertisement",          "Broadcast",      "Offline", 12, 8,  "National", "High",   "No",  "No"),
+    (708, "Radio",                     "Broadcast",      "Offline", 8,  7,  "Regional", "Low",    "No",  "No"),
+    (709, "Referral",                  "Word of Mouth",  "Offline", 5,  45, "Local",    "Low",    "No",  "No"),
+    (710, "Website / Direct",          "Organic Digital","Online",  0,  15, "National", "Low",    "Yes", "Yes"),
+    (711, "Corporate Sales",           "B2B Direct",     "Offline", 90, 35, "Local",    "High",   "No",  "Partial"),
+    (712, "WhatsApp / SMS",            "Messaging",      "Online",  6,  22, "Database", "Low",    "Yes", "Yes"),
+    (713, "Newspaper / Print",         "Print Media",    "Offline", 15, 9,  "Regional", "Medium", "No",  "No"),
+    (714, "Outdoor / Billboard",       "Out of Home",    "Offline", 4,  6,  "Local",    "Medium", "No",  "No"),
+    (715, "Dealer Partner Network",    "Partnership",    "Offline", 35, 28, "Regional", "Medium", "No",  "Partial"),
+    (716, "Cold Call / Telemarketing", "Outbound",       "Offline", 12, 12, "Database", "Low",    "No",  "Yes"),
+    (717, "LinkedIn / B2B Social",     "Paid Social",    "Online",  55, 25, "National", "High",   "Yes", "Yes"),
+], columns=[
+    "ChannelKey", "ChannelName", "ChannelType", "Medium",
+    "AvgCPL_USD", "ConversionRate_pct", "ReachScope",
+    "CostTier", "IsDigital", "IsTracked"
+])
+
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Channel"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_channel_improved.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+for row_idx, row in enumerate(dim_channel_improved.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("✅ Dim_Channel improved — saved to Drive!")
+print(dim_channel_improved.to_string(index=False))
