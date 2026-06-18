@@ -1,0 +1,56 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main = all_sheets["Car Sales.xlsx - car_data"]
+
+np.random.seed(42)
+
+city_to_state = {
+    "Middletown": "Ohio",
+    "Aurora":     "Colorado",
+    "Greenville": "South Carolina",
+    "Pasco":      "Washington",
+    "Janesville": "Wisconsin",
+    "Scottsdale": "Arizona",
+    "Austin":     "Texas",
+}
+
+# Unique dealers only
+dealers = main[["Dealer_Name", "Dealer_No ", "Dealer_Region"]].drop_duplicates().reset_index(drop=True)
+
+dealers["DealerKey"]  = range(301, 301 + len(dealers))
+dealers["DealerName"] = dealers["Dealer_Name"]
+dealers["DealerType"] = np.random.choice(["Authorized", "Franchise"], size=len(dealers), p=[0.60, 0.40])
+dealers["City"]       = dealers["Dealer_Region"]
+dealers["State"]      = dealers["Dealer_Region"].map(city_to_state)
+
+dim_dealer = dealers[["DealerKey", "DealerName", "DealerType", "City", "State"]].reset_index(drop=True)
+
+wb = load_workbook(LOCAL_FILE)
+
+if "Dim_Dealer" not in wb.sheetnames:
+    wb.create_sheet("Dim_Dealer")
+
+ws = wb["Dim_Dealer"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_dealer.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_dealer.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Completed")
+print(dim_dealer.to_string())
