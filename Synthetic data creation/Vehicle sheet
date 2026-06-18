@@ -51,3 +51,136 @@ shutil.copy(LOCAL_FILE, DRIVE_FILE)
 
 print("Completed")
 print(dim_vehicle.head())
+
+import pandas as pd
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main = all_sheets["Car Sales.xlsx - car_data"]
+
+# Fuel type map based on actual model research
+# US market ~1999-2001: almost all Petrol, except a few diesel/electric exceptions
+fuel_map = {
+    # Acura — all petrol
+    "RL": "Petrol", "TL": "Petrol", "Integra": "Petrol",
+    # Audi — A4/A6/A8 were petrol in US market
+    "A4": "Petrol", "A6": "Petrol", "A8": "Petrol",
+    # BMW — all petrol in US at this era
+    "323i": "Petrol", "328i": "Petrol", "528i": "Petrol",
+    # Buick — all petrol
+    "Regal": "Petrol", "LeSabre": "Petrol", "Park Avenue": "Petrol", "Century": "Petrol",
+    # Cadillac — all petrol
+    "Seville": "Petrol", "Catera": "Petrol", "Escalade": "Petrol",
+    "Eldorado": "Petrol", "DeVille": "Petrol",
+    # Chevrolet
+    "Corvette": "Petrol", "Metro": "Petrol", "Impala": "Petrol",
+    "Camaro": "Petrol", "Cavalier": "Petrol", "Malibu": "Petrol",
+    "Prizm": "Petrol", "Lumina": "Petrol", "Monte Carlo": "Petrol",
+    # Chrysler
+    "Cirrus": "Petrol", "Concorde": "Petrol", "LHS": "Petrol",
+    "300M": "Petrol", "Sebring Coupe": "Petrol", "Sebring Conv.": "Petrol",
+    "Town & Country": "Petrol",
+    # Dodge
+    "Ram Van": "Petrol", "Viper": "Petrol", "Caravan": "Petrol",
+    "Ram Wagon": "Petrol", "Intrepid": "Petrol", "Dakota": "Petrol",
+    "Neon": "Petrol", "Ram Pickup": "Petrol", "Durango": "Petrol",
+    "Stratus": "Petrol", "Avenger": "Petrol",
+    # Ford
+    "Mustang": "Petrol", "Expedition": "Petrol", "Crown Victoria": "Petrol",
+    "Focus": "Petrol", "Ranger": "Petrol", "Windstar": "Petrol",
+    "F-Series": "Petrol", "Explorer": "Petrol", "Contour": "Petrol",
+    "Taurus": "Petrol", "Escort": "Petrol",
+    # Honda
+    "CR-V": "Petrol", "Odyssey": "Petrol", "Civic": "Petrol",
+    "Passport": "Petrol", "Accord": "Petrol",
+    # Hyundai
+    "Elantra": "Petrol", "Sonata": "Petrol", "Accent": "Petrol",
+    # Infiniti
+    "I30": "Petrol",
+    # Jaguar
+    "S-Type": "Petrol",
+    # Jeep
+    "Grand Cherokee": "Petrol", "Cherokee": "Petrol", "Wrangler": "Petrol",
+    # Lexus
+    "LX470": "Petrol", "GS400": "Petrol", "RX300": "Petrol",
+    "ES300": "Petrol", "GS300": "Petrol", "LS400": "Petrol",
+    # Lincoln
+    "Town car": "Petrol", "Continental": "Petrol", "Navigator": "Petrol",
+    # Mercedes-Benz — US market all petrol at this era
+    "S-Class": "Petrol", "CLK Coupe": "Petrol", "SLK230": "Petrol",
+    "CL500": "Petrol", "E-Class": "Petrol", "SLK": "Petrol",
+    "M-Class": "Petrol", "SL-Class": "Petrol", "C-Class": "Petrol",
+    # Mercury
+    "Mystique": "Petrol", "Mountaineer": "Petrol", "Grand Marquis": "Petrol",
+    "Villager": "Petrol", "Cougar": "Petrol", "Sable": "Petrol",
+    # Mitsubishi
+    "Galant": "Petrol", "Montero": "Petrol", "Mirage": "Petrol",
+    "Eclipse": "Petrol", "3000GT": "Petrol", "Montero Sport": "Petrol",
+    "Diamante": "Petrol",
+    # Nissan
+    "Maxima": "Petrol", "Pathfinder": "Petrol", "Xterra": "Petrol",
+    "Altima": "Petrol", "Frontier": "Petrol", "Quest": "Petrol",
+    "Sentra": "Petrol",
+    # Oldsmobile
+    "Bravada": "Petrol", "Intrigue": "Petrol", "Aurora": "Petrol",
+    "Silhouette": "Petrol", "Cutlass": "Petrol", "Alero": "Petrol",
+    # Plymouth
+    "Voyager": "Petrol", "Neon": "Petrol", "Breeze": "Petrol",
+    "Prowler": "Petrol",
+    # Pontiac
+    "Grand Am": "Petrol", "Firebird": "Petrol", "Grand Prix": "Petrol",
+    "Sunfire": "Petrol", "Bonneville": "Petrol",
+    # Porsche
+    "Carrera Coupe": "Petrol", "Carrera Cabrio": "Petrol", "Boxter": "Petrol",
+    # Saab — petrol in US
+    "Saab": "Petrol",
+    # Saturn
+    "SW": "Petrol", "LW": "Petrol", "LS": "Petrol",
+    "SL": "Petrol", "SC": "Petrol",
+    # Subaru
+    "Outback": "Petrol", "Forester": "Petrol",
+    # Toyota
+    "Sienna": "Petrol", "Corolla": "Petrol", "Celica": "Petrol",
+    "Avalon": "Petrol", "Land Cruiser": "Petrol", "4Runner": "Petrol",
+    "Tacoma": "Petrol", "Camry": "Petrol", "RAV4": "Petrol",
+    # Volkswagen — Jetta/Golf had TDI diesel option in US
+    "Cabrio": "Petrol", "GTI": "Petrol", "Golf": "Diesel",
+    "Jetta": "Diesel", "Beetle": "Petrol", "Passat": "Petrol",
+    # Volvo — US market petrol
+    "S80": "Petrol", "V70": "Petrol", "V40": "Petrol",
+    "C70": "Petrol", "S70": "Petrol", "S40": "Petrol",
+}
+
+# Build Dim_Vehicle
+dim_vehicle = pd.DataFrame()
+dim_vehicle["VehicleKey"]    = range(101, 101 + len(main))
+dim_vehicle["Brand"]         = main["Company"].values
+dim_vehicle["Model"]         = main["Model"].values
+dim_vehicle["BodyType"]      = main["Body Style"].values
+dim_vehicle["FuelType"]      = main["Model"].map(fuel_map).fillna("Petrol")
+dim_vehicle["Transmission"]  = main["Transmission"].values
+dim_vehicle["Price"]         = main["Price ($)"].values
+
+# Write to Dim_Vehicle sheet
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Vehicle"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_vehicle.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_vehicle.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_vehicle[["Brand", "Model", "FuelType"]].drop_duplicates().sort_values("Brand").to_string())
