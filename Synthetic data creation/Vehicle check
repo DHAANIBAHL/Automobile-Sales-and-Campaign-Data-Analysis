@@ -1,0 +1,14 @@
+import pandas as pd
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets  = pd.read_excel(LOCAL_FILE, sheet_name=None)
+dim_vehicle = all_sheets["Dim_Vehicle"]
+
+print("Current FuelType distribution:")
+print(dim_vehicle["FuelType"].value_counts())
+print(f"\nTotal vehicles: {len(dim_vehicle)}")
+print(f"\nUnique models: {dim_vehicle['Model'].nunique()}")
