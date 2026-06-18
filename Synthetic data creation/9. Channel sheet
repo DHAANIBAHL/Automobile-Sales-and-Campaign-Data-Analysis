@@ -1,0 +1,51 @@
+import pandas as pd
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+channels = [
+    "Google Search",
+    "Facebook/Instagram",
+    "YouTube",
+    "Email Campaign",
+    "Showroom Walk-in",
+    "Auto Expo / Event",
+    "TV Advertisement",
+    "Radio",
+    "Referral",
+    "Website / Direct",
+    "Corporate Sales",
+    "WhatsApp / SMS",
+    "Newspaper / Print",
+    "Outdoor / Billboard",
+    "Dealer Partner Network",
+    "Cold Call / Telemarketing",
+    "LinkedIn / B2B Social",
+]
+
+dim_channel = pd.DataFrame({
+    "ChannelKey":  range(701, 701 + len(channels)),
+    "ChannelName": channels,
+})
+
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Channel"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_channel.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_channel.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_channel.to_string())
+print(f"\nTotal channels: {len(dim_channel)}")
