@@ -1,0 +1,9 @@
+from google.colab import drive
+drive.mount('/content/drive')
+
+import os
+
+for root, dirs, files in os.walk("/content/drive/MyDrive"):
+    for file in files:
+        if "car" in file.lower() or "sales" in file.lower():
+            print(os.path.join(root, file))
