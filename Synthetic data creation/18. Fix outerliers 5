@@ -1,0 +1,38 @@
+import pandas as pd
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+dim_channel = all_sheets["Dim_Channel"].copy()
+
+# Rename only — keys unchanged so no fact table updates needed
+name_fixes = {
+    "Auto Expo / Event":         "Auto Event",
+    "Newspaper / Print":         "Newspaper",
+    "Cold Call / Telemarketing": "Telemarketing",
+    "LinkedIn / B2B Social":     "B2B Social",
+}
+
+dim_channel["ChannelName"] = dim_channel["ChannelName"].replace(name_fixes)
+
+# Write back
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Channel"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_channel.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+for row_idx, row in enumerate(dim_channel.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("✅ Channel names updated — keys unchanged so fact tables stay in sync")
+print(dim_channel[["ChannelKey","ChannelName"]].to_string(index=False))
