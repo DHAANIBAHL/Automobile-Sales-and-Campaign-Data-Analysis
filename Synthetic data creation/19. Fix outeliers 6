@@ -1,0 +1,97 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets  = pd.read_excel(LOCAL_FILE, sheet_name=None)
+dim_vehicle = all_sheets["Dim_Vehicle"].copy()
+
+np.random.seed(42)
+
+# ── Real US market fuel share ~1999-2001 ──────────────────────────
+# Petrol:  72% — dominated everything in that era
+# Diesel:  15% — trucks and large SUVs only
+# CNG:      8% — fleet vehicles (taxis, police, government)
+# Hybrid:   5% — barely existed, only Prius (1997 Japan, 2000 US)
+
+# ── Hard assignments for specific models ─────────────────────────
+diesel_models = {
+    "Ram Pickup","Ram Van","Ram Wagon","Dakota","Durango",
+    "Expedition","F-Series","Explorer","Ranger","Pathfinder",
+    "Xterra","Frontier","Montero","Montero Sport","4Runner",
+    "Land Cruiser","Tacoma","Grand Cherokee","Cherokee",
+    "Wrangler","Escalade","Bravada","Mountaineer","Navigator",
+    "LX470","Jetta","Golf","Silverado","Sierra","Suburban",
+}
+
+hybrid_models = {
+    "ES300","RX300","GS300","LS400","GS400",
+    "S-Class","E-Class","C-Class","Town car",
+    "Continental","Seville","DeVille","LS400",
+}
+
+cng_models = {
+    "Crown Victoria","Taurus","Impala","Lumina","Metro",
+    "Cavalier","Neon","Sentra","Accent","Voyager","Caravan",
+}
+
+def assign_fuel(row):
+    model    = row["Model"]
+    bodytype = row["BodyType"]
+
+    # Hard assignments first
+    if model in diesel_models:
+        return "Diesel"
+    if model in hybrid_models:
+        return "Hybrid"
+    if model in cng_models:
+        return "CNG"
+
+    # Body type weighted probabilities — Petrol heavily dominant
+    if bodytype == "SUV":
+        return np.random.choice(
+            ["Petrol","Diesel","CNG","Hybrid"],
+            p=[0.55, 0.35, 0.05, 0.05]
+        )
+    elif bodytype in ["Hatchback","Sedan","Passenger","Hardtop"]:
+        return np.random.choice(
+            ["Petrol","CNG","Hybrid","Diesel"],
+            p=[0.82, 0.10, 0.05, 0.03]
+        )
+    else:
+        return np.random.choice(
+            ["Petrol","Diesel","CNG","Hybrid"],
+            p=[0.72, 0.15, 0.08, 0.05]
+        )
+
+dim_vehicle["FuelType"] = dim_vehicle.apply(assign_fuel, axis=1)
+
+# ── Distribution check ────────────────────────────────────────────
+dist = dim_vehicle["FuelType"].value_counts()
+pct  = (dist / len(dim_vehicle) * 100).round(1)
+
+print("Updated FuelType distribution:")
+for fuel, count in dist.items():
+    print(f"   {fuel:<10} {count:>4}  ({pct[fuel]}%)")
+
+print("\nFuel type by Body Type:")
+print(dim_vehicle.groupby(["BodyType","FuelType"]).size().unstack(fill_value=0).to_string())
+
+# ── Save ──────────────────────────────────────────────────────────
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Vehicle"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_vehicle.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+for row_idx, row in enumerate(dim_vehicle.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+print("\n✅ Saved to Drive")
