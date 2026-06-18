@@ -1,0 +1,91 @@
+!pip install faker -q
+
+import pandas as pd
+import numpy as np
+from faker import Faker
+from openpyxl import load_workbook
+import shutil
+from datetime import timedelta
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+fake = Faker("en_US")
+Faker.seed(42)
+np.random.seed(42)
+
+n_campaigns = 100
+
+campaign_names = [
+    "Festive Bonanza", "SUV Launch Promo", "Year End Clearance",
+    "Summer Drive Fest", "New Year New Car", "Black Friday Deal",
+    "Test Drive Weekend", "EV Awareness Drive", "Loyalty Rewards",
+    "Back to School Sale", "Family SUV Offer", "Sedan Spectacular",
+    "Trade-In Bonanza", "Zero Down Payment", "Weekend Warrior Deal",
+    "Holiday Savings", "Spring Sale Event", "Flash Sale Friday",
+    "Premium Drive Days", "First Car Festival",
+]
+
+campaign_types = [
+    "Digital", "Discount", "Seasonal", "Product Launch",
+    "Loyalty", "Referral", "Test Drive", "Awareness",
+]
+
+budget_map = {
+    "Digital":        (50000,  200000),
+    "Discount":       (100000, 500000),
+    "Seasonal":       (150000, 600000),
+    "Product Launch": (300000, 1000000),
+    "Loyalty":        (30000,  150000),
+    "Referral":       (20000,  100000),
+    "Test Drive":     (40000,  180000),
+    "Awareness":      (80000,  300000),
+}
+
+start_dates = pd.date_range("2022-01-01", "2024-06-01", freq="W")
+
+rows = []
+for i in range(n_campaigns):
+    ctype      = np.random.choice(campaign_types)
+    # Fix: convert to pandas Timestamp explicitly
+    start_date = pd.Timestamp(start_dates[np.random.randint(0, len(start_dates))])
+    duration   = int(np.random.randint(7, 60))
+    end_date   = start_date + timedelta(days=duration)
+    bmin, bmax = budget_map[ctype]
+    budget     = round(np.random.uniform(bmin, bmax), 2)
+
+    rows.append({
+        "CampaignKey":  601 + i,
+        "CampaignName": np.random.choice(campaign_names),
+        "CampaignType": ctype,
+        "StartDate":    start_date.strftime("%Y-%m-%d"),
+        "EndDate":      end_date.strftime("%Y-%m-%d"),
+        "Budget":       budget,
+    })
+
+dim_campaign = pd.DataFrame(rows)
+
+wb = load_workbook(LOCAL_FILE)
+
+if "Dim_Campaign" not in wb.sheetnames:
+    wb.create_sheet("Dim_Campaign")
+
+ws = wb["Dim_Campaign"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_campaign.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_campaign.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_campaign.to_string())
