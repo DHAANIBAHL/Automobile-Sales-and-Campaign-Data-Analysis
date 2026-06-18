@@ -1,0 +1,48 @@
+import pandas as pd
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+# Step 1: Copy from Drive to local
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+# Step 2: Read ONLY Dim_Date sheet
+df = pd.read_excel(LOCAL_FILE, sheet_name="Dim_Date")
+
+# Step 3: Apply changes
+parsed = pd.to_datetime(df["Date"], format='mixed', dayfirst=True)
+df["Date"]      = parsed.dt.strftime("%Y-%m-%d")
+df["DateKey"]   = parsed.dt.strftime("%Y%m%d").astype(int)
+df["Day"]       = parsed.dt.day
+df["MonthName"] = parsed.dt.strftime("%B")
+df["Quarter"]   = parsed.dt.quarter
+df["Year"]      = parsed.dt.year
+df["IsWeekend"] = parsed.dt.dayofweek >= 5  # True if Saturday or Sunday
+
+# Step 4: Reorder columns — DateKey first, then the rest
+df = df[["DateKey", "Date", "Day", "MonthName", "Quarter", "Year", "IsWeekend"]]
+
+# Step 5: Load workbook and write ONLY to Dim_Date sheet
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Date"]
+
+# Clear existing content
+ws.delete_rows(1, ws.max_row)
+
+# Write headers
+for col_idx, col_name in enumerate(df.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+# Write data row by row
+for row_idx, row in enumerate(df.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+# Step 6: Save locally then push back to Drive
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Completed")
+print(df.head())
