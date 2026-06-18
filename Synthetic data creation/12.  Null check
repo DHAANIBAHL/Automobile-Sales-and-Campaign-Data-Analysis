@@ -1,0 +1,18 @@
+import pandas as pd
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+for sheet, df in all_sheets.items():
+    print(f"\n{'='*60}")
+    print(f"SHEET: {sheet}")
+    print(f"Shape: {df.shape}")
+    print(f"Columns: {df.columns.tolist()}")
+    print(f"Nulls:\n{df.isnull().sum()}")
+    print(f"Duplicates: {df.duplicated().sum()}")
+    print(df.head(3).to_string())
