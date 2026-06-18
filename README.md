@@ -187,11 +187,3 @@ Automobile-Sales-and-Campaign-Analysis/
 
 ---
 
-## 👤 Author
-
-**Dhaani Bahl**
-
-Data Analytics | Machine Learning | Business Intelligence
-
-Skills: Python, SQL, Power BI, Machine Learning, Data Visualization, Forecasting
-
