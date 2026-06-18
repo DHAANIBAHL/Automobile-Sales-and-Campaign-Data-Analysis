@@ -1,0 +1,143 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+np.random.seed(42)
+
+# ── Rebuilt Dim_Channel — Facebook & Instagram split, WhatsApp & SMS split ────
+dim_channel_fixed = pd.DataFrame([
+    (701, "Google Search",             "Paid Digital",   "Online",  45, 18, "National", "High",   "Yes", "Yes"),
+    (702, "Facebook",                  "Paid Social",    "Online",  30, 14, "National", "Medium", "Yes", "Yes"),
+    (703, "Instagram",                 "Paid Social",    "Online",  25, 12, "National", "Medium", "Yes", "Yes"),
+    (704, "YouTube",                   "Video Ad",       "Online",  18, 10, "National", "Medium", "Yes", "Yes"),
+    (705, "Email Campaign",            "Direct Digital", "Online",  10, 20, "Database", "Low",    "Yes", "Yes"),
+    (706, "Showroom Walk-in",          "Physical",       "Offline", 65, 38, "Local",    "High",   "No",  "Partial"),
+    (707, "Auto Expo / Event",         "Event",          "Offline", 80, 30, "Regional", "High",   "No",  "Partial"),
+    (708, "TV Advertisement",          "Broadcast",      "Offline", 12, 8,  "National", "High",   "No",  "No"),
+    (709, "Radio",                     "Broadcast",      "Offline", 8,  7,  "Regional", "Low",    "No",  "No"),
+    (710, "Referral",                  "Word of Mouth",  "Offline", 5,  45, "Local",    "Low",    "No",  "No"),
+    (711, "Website / Direct",          "Organic Digital","Online",  0,  15, "National", "Low",    "Yes", "Yes"),
+    (712, "Corporate Sales",           "B2B Direct",     "Offline", 90, 35, "Local",    "High",   "No",  "Partial"),
+    (713, "WhatsApp",                  "Messaging",      "Online",  6,  24, "Database", "Low",    "Yes", "Yes"),
+    (714, "SMS",                       "Messaging",      "Online",  4,  18, "Database", "Low",    "Yes", "Yes"),
+    (715, "Newspaper / Print",         "Print Media",    "Offline", 15, 9,  "Regional", "Medium", "No",  "No"),
+    (716, "Outdoor / Billboard",       "Out of Home",    "Offline", 4,  6,  "Local",    "Medium", "No",  "No"),
+    (717, "Dealer Partner Network",    "Partnership",    "Offline", 35, 28, "Regional", "Medium", "No",  "Partial"),
+    (718, "Cold Call / Telemarketing", "Outbound",       "Offline", 12, 12, "Database", "Low",    "No",  "Yes"),
+    (719, "LinkedIn / B2B Social",     "Paid Social",    "Online",  55, 25, "National", "High",   "Yes", "Yes"),
+], columns=[
+    "ChannelKey","ChannelName","ChannelType","Medium",
+    "AvgCPL_USD","ConversionRate_pct","ReachScope",
+    "CostTier","IsDigital","IsTracked"
+])
+
+print("✅ Dim_Channel rebuilt — 19 channels")
+print(dim_channel_fixed[["ChannelKey","ChannelName","ChannelType"]].to_string(index=False))
+
+# ── New channel pool for reassignment ────────────────────────────
+new_channel_pool = dim_channel_fixed["ChannelKey"].astype(int).values
+
+# Old channel pool (17 keys 701–717) → remap to new pool (19 keys 701–719)
+# Any row that had old 702 (Facebook/Instagram) randomly gets 702 or 703
+# Any row that had old 712 (WhatsApp/SMS) randomly gets 713 or 714
+# All other old keys map 1:1 to new keys via this table:
+old_to_new_map = {
+    701: [701],       # Google Search → Google Search
+    702: [702, 703],  # Facebook/Instagram → Facebook OR Instagram (random)
+    703: [704],       # YouTube → YouTube
+    704: [705],       # Email Campaign → Email Campaign
+    705: [706],       # Showroom Walk-in → Showroom Walk-in
+    706: [707],       # Auto Expo → Auto Expo
+    707: [708],       # TV → TV
+    708: [709],       # Radio → Radio
+    709: [710],       # Referral → Referral
+    710: [711],       # Website → Website
+    711: [712],       # Corporate Sales → Corporate Sales
+    712: [713, 714],  # WhatsApp/SMS → WhatsApp OR SMS (random)
+    713: [715],       # Newspaper → Newspaper
+    714: [716],       # Billboard → Billboard
+    715: [717],       # Dealer Partner → Dealer Partner
+    716: [718],       # Cold Call → Cold Call
+    717: [719],       # LinkedIn → LinkedIn
+}
+
+def remap_channel(old_key):
+    options = old_to_new_map.get(int(old_key), [int(old_key)])
+    return int(np.random.choice(options))
+
+# ── Update Fact_VehicleSales ──────────────────────────────────────
+fvs = all_sheets["Fact_VehicleSales"].copy()
+fvs["ChannelKey"] = fvs["ChannelKey"].apply(remap_channel)
+print(f"\n✅ Fact_VehicleSales: ChannelKey remapped")
+print(f"   Unique ChannelKeys: {sorted(fvs['ChannelKey'].unique())}")
+
+# ── Update Fact_MarketingCampaignPerforman ────────────────────────
+fmc = all_sheets["Fact_MarketingCampaignPerforman"].copy()
+fmc["ChannelKey"] = fmc["ChannelKey"].apply(remap_channel)
+print(f"\n✅ Fact_MarketingCampaign: ChannelKey remapped")
+print(f"   Unique ChannelKeys: {sorted(fmc['ChannelKey'].unique())}")
+
+# ── Update Fact_TestDrive ─────────────────────────────────────────
+ftd = all_sheets["Fact_TestDrive"].copy()
+ftd["ChannelKey"] = ftd["ChannelKey"].apply(remap_channel)
+print(f"\n✅ Fact_TestDrive: ChannelKey remapped")
+print(f"   Unique ChannelKeys: {sorted(ftd['ChannelKey'].unique())}")
+
+# ── Write all affected sheets ─────────────────────────────────────
+sheets_to_write = {
+    "Dim_Channel":                     dim_channel_fixed,
+    "Fact_VehicleSales":               fvs,
+    "Fact_MarketingCampaignPerforman": fmc,
+    "Fact_TestDrive":                  ftd,
+}
+
+wb = load_workbook(LOCAL_FILE)
+for sheet_name, df in sheets_to_write.items():
+    if sheet_name not in wb.sheetnames:
+        wb.create_sheet(sheet_name)
+    ws = wb[sheet_name]
+    ws.delete_rows(1, ws.max_row)
+    for col_idx, col_name in enumerate(df.columns, 1):
+        ws.cell(row=1, column=col_idx, value=col_name)
+    for row_idx, row in enumerate(df.itertuples(index=False), 2):
+        for col_idx, value in enumerate(row, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+# ── Validation ────────────────────────────────────────────────────
+print("\n" + "="*55)
+print("VALIDATION — ALL CHANNELKEYS IN SYNC")
+print("="*55)
+valid_keys = set(dim_channel_fixed["ChannelKey"].astype(int))
+
+for name, df in [
+    ("Fact_VehicleSales",               fvs),
+    ("Fact_MarketingCampaignPerforman", fmc),
+    ("Fact_TestDrive",                  ftd),
+]:
+    fact_keys    = set(df["ChannelKey"].astype(int))
+    orphan_keys  = fact_keys - valid_keys
+    print(f"\n   {name}")
+    print(f"   Rows: {len(df):,}")
+    print(f"   All keys valid: {'✅ Yes' if not orphan_keys else f'❌ Orphans: {orphan_keys}'}")
+    print(f"   Channel distribution:")
+    dist = (
+        df["ChannelKey"]
+        .value_counts()
+        .reset_index()
+        .merge(dim_channel_fixed[["ChannelKey","ChannelName"]], on="ChannelKey")
+        .sort_values("ChannelKey")
+    )
+    for _, r in dist.iterrows():
+        print(f"      {int(r['ChannelKey']):>4} {r['ChannelName']:<30} {int(r['count']):>6} rows")
+
+print("\n✅ All sheets saved to Drive — Dim_Channel fully synced!")
