@@ -1,0 +1,187 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets    = pd.read_excel(LOCAL_FILE, sheet_name=None)
+dim_date      = all_sheets["Dim_Date"]
+dim_channel   = all_sheets["Dim_Channel"]
+dim_campaign  = all_sheets["Dim_Campaign"]
+dim_vehicle   = all_sheets["Dim_Vehicle"]
+dim_customer  = all_sheets["Dim_Customer"]
+dim_dealer    = all_sheets["Dim_Dealer"]
+main          = all_sheets["Car Sales.xlsx - car_data"]
+
+np.random.seed(42)
+
+# ═══════════════════════════════════════════════════════════════════
+# FACT_MARKETINGCAMPAIGNPERFORMANCE
+# ═══════════════════════════════════════════════════════════════════
+
+channel_benchmarks = {
+    701: {"imp": (50000,  500000),  "lead_rate": (0.03, 0.06), "td_rate": (0.12, 0.20), "book_rate": (0.25, 0.45)},  # Google Search
+    702: {"imp": (80000,  800000),  "lead_rate": (0.005,0.02), "td_rate": (0.08, 0.15), "book_rate": (0.20, 0.40)},  # Facebook
+    703: {"imp": (100000,1000000),  "lead_rate": (0.002,0.01), "td_rate": (0.06, 0.12), "book_rate": (0.15, 0.35)},  # YouTube
+    704: {"imp": (10000,  100000),  "lead_rate": (0.04, 0.08), "td_rate": (0.15, 0.25), "book_rate": (0.30, 0.50)},  # Email
+    705: {"imp": (1000,   20000),   "lead_rate": (0.10, 0.25), "td_rate": (0.40, 0.65), "book_rate": (0.50, 0.75)},  # Showroom
+    706: {"imp": (5000,   50000),   "lead_rate": (0.08, 0.20), "td_rate": (0.30, 0.55), "book_rate": (0.40, 0.65)},  # Auto Expo
+    707: {"imp": (200000,2000000),  "lead_rate": (0.001,0.005),"td_rate": (0.05, 0.10), "book_rate": (0.10, 0.25)},  # TV
+    708: {"imp": (50000,  500000),  "lead_rate": (0.002,0.008),"td_rate": (0.04, 0.08), "book_rate": (0.10, 0.20)},  # Radio
+    709: {"imp": (500,    5000),    "lead_rate": (0.15, 0.30), "td_rate": (0.35, 0.60), "book_rate": (0.50, 0.80)},  # Referral
+    710: {"imp": (20000,  200000),  "lead_rate": (0.02, 0.05), "td_rate": (0.10, 0.20), "book_rate": (0.25, 0.45)},  # Website
+    711: {"imp": (1000,   10000),   "lead_rate": (0.10, 0.25), "td_rate": (0.30, 0.50), "book_rate": (0.40, 0.70)},  # Corporate
+    712: {"imp": (5000,   50000),   "lead_rate": (0.05, 0.12), "td_rate": (0.15, 0.30), "book_rate": (0.25, 0.50)},  # WhatsApp
+    713: {"imp": (30000,  300000),  "lead_rate": (0.002,0.008),"td_rate": (0.05, 0.10), "book_rate": (0.10, 0.25)},  # Newspaper
+    714: {"imp": (100000,1000000),  "lead_rate": (0.001,0.004),"td_rate": (0.03, 0.07), "book_rate": (0.08, 0.20)},  # Billboard
+    715: {"imp": (2000,   20000),   "lead_rate": (0.08, 0.18), "td_rate": (0.20, 0.40), "book_rate": (0.30, 0.60)},  # Dealer Partner
+    716: {"imp": (5000,   30000),   "lead_rate": (0.03, 0.08), "td_rate": (0.10, 0.20), "book_rate": (0.15, 0.35)},  # Cold Call
+    717: {"imp": (3000,   30000),   "lead_rate": (0.05, 0.12), "td_rate": (0.15, 0.30), "book_rate": (0.25, 0.50)},  # LinkedIn
+}
+
+avg_vehicle_price = 28000
+date_pool    = dim_date["DateKey"].astype(int).values
+channel_pool = dim_channel["ChannelKey"].astype(int).values
+
+camp_rows = []
+for i, camp in dim_campaign.iterrows():
+    channel_key = int(np.random.choice(channel_pool))
+    bm          = channel_benchmarks.get(channel_key, channel_benchmarks[701])
+
+    # DateKey within campaign start/end
+    camp_start  = pd.to_datetime(camp["StartDate"])
+    camp_end    = pd.to_datetime(camp["EndDate"])
+    dim_date["Date"] = pd.to_datetime(dim_date["Date"])
+    valid_dates = dim_date[
+        (dim_date["Date"] >= camp_start) &
+        (dim_date["Date"] <= camp_end)
+    ]["DateKey"].values
+    date_key = int(np.random.choice(valid_dates)) if len(valid_dates) > 0 else int(np.random.choice(date_pool))
+
+    impressions = int(np.random.randint(*[int(x) for x in bm["imp"]]))
+    leads       = max(int(impressions * np.random.uniform(*bm["lead_rate"])), 1)
+    test_drives = max(int(leads       * np.random.uniform(*bm["td_rate"])),  1)
+    bookings    = max(int(test_drives  * np.random.uniform(*bm["book_rate"])),1)
+    cost        = round(float(camp["Budget"]) * np.random.uniform(0.85, 1.10), 2)
+    revenue     = round(bookings * avg_vehicle_price * np.random.uniform(0.08, 0.15), 2)
+
+    camp_rows.append({
+        "CampaignFactKey":  8001 + i,
+        "CampaignKey":      int(camp["CampaignKey"]),
+        "DateKey":          date_key,
+        "ChannelKey":       channel_key,
+        "Impressions":      impressions,
+        "Leads":            leads,
+        "TestDrives":       test_drives,
+        "Bookings":         bookings,
+        "CampaignCost":     cost,
+        "RevenueGenerated": revenue,
+    })
+
+fact_campaign = pd.DataFrame(camp_rows)
+
+# ═══════════════════════════════════════════════════════════════════
+# FACT_TESTDRIVE
+# ═══════════════════════════════════════════════════════════════════
+
+n_testdrives = int(len(main) * 0.65)
+sampled      = main.sample(n=n_testdrives, random_state=42).reset_index(drop=True)
+
+# DateKey
+sampled["Date"]  = pd.to_datetime(sampled["Date"]).dt.strftime("%Y-%m-%d")
+dim_date["Date"] = dim_date["Date"].dt.strftime("%Y-%m-%d")
+date_map         = dict(zip(dim_date["Date"], dim_date["DateKey"].astype(int)))
+td_date_keys     = sampled["Date"].map(date_map).fillna(int(dim_date["DateKey"].iloc[0])).astype(int)
+
+# VehicleKey
+vehicle_lookup = {
+    (row["Brand"], row["Model"]): int(row["VehicleKey"])
+    for _, row in dim_vehicle.iterrows()
+}
+td_vehicle_keys = [
+    vehicle_lookup.get((r["Company"], r["Model"]), int(dim_vehicle["VehicleKey"].iloc[0]))
+    for _, r in sampled.iterrows()
+]
+
+# CustomerKey
+td_customer_keys = np.random.choice(dim_customer["CustomerKey"].astype(int).values, size=n_testdrives)
+
+# DealerKey
+dealer_map      = dict(zip(dim_dealer["DealerName"], dim_dealer["DealerKey"].astype(int)))
+td_dealer_keys  = sampled["Dealer_Name"].map(dealer_map).fillna(int(dim_dealer["DealerKey"].iloc[0])).astype(int)
+
+# ChannelKey
+td_channel_keys = np.random.choice(channel_pool, size=n_testdrives)
+
+# Outcome — channel-based conversion rates
+channel_conv = {
+    701: 0.18, 702: 0.13, 703: 0.10, 704: 0.20,
+    705: 0.38, 706: 0.30, 707: 0.08, 708: 0.07,
+    709: 0.45, 710: 0.15, 711: 0.35, 712: 0.22,
+    713: 0.09, 714: 0.06, 715: 0.28, 716: 0.12, 717: 0.25,
+}
+outcomes = [
+    "Converted" if np.random.random() < channel_conv.get(int(ck), 0.15) else "Not Converted"
+    for ck in td_channel_keys
+]
+
+fact_testdrive = pd.DataFrame({
+    "TestDriveKey": range(10001, 10001 + n_testdrives),
+    "DateKey":      td_date_keys.values,
+    "VehicleKey":   td_vehicle_keys,
+    "CustomerKey":  td_customer_keys,
+    "DealerKey":    td_dealer_keys.values,
+    "ChannelKey":   td_channel_keys,
+    "Outcome":      outcomes,
+})
+
+# ═══════════════════════════════════════════════════════════════════
+# WRITE BOTH SHEETS
+# ═══════════════════════════════════════════════════════════════════
+
+wb = load_workbook(LOCAL_FILE)
+
+for sheet_name, df in [
+    ("Fact_MarketingCampaign", fact_campaign),
+    ("Fact_TestDrive",         fact_testdrive),
+]:
+    if sheet_name not in wb.sheetnames:
+        wb.create_sheet(sheet_name)
+    ws = wb[sheet_name]
+    ws.delete_rows(1, ws.max_row)
+    for col_idx, col_name in enumerate(df.columns, 1):
+        ws.cell(row=1, column=col_idx, value=col_name)
+    for row_idx, row in enumerate(df.itertuples(index=False), 2):
+        for col_idx, value in enumerate(row, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+# ── Validation ────────────────────────────────────────────────────
+print("=== FACT_MARKETINGCAMPAIGN ===")
+print(f"Rows: {len(fact_campaign)}")
+print(f"CampaignFactKey: {fact_campaign['CampaignFactKey'].min()} – {fact_campaign['CampaignFactKey'].max()}")
+print(f"CampaignKey:     {fact_campaign['CampaignKey'].min()} – {fact_campaign['CampaignKey'].max()}  (expected 601–700)")
+print(f"ChannelKey:      {fact_campaign['ChannelKey'].min()} – {fact_campaign['ChannelKey'].max()}   (expected 701–717)")
+print(f"Impressions:     {fact_campaign['Impressions'].min():,} – {fact_campaign['Impressions'].max():,}")
+print(f"Leads:           {fact_campaign['Leads'].min():,} – {fact_campaign['Leads'].max():,}")
+print(f"Total Revenue:  ${fact_campaign['RevenueGenerated'].sum():,.2f}")
+print(f"Total Cost:     ${fact_campaign['CampaignCost'].sum():,.2f}")
+
+print("\n=== FACT_TESTDRIVE ===")
+print(f"Rows: {len(fact_testdrive)}")
+print(f"TestDriveKey: {fact_testdrive['TestDriveKey'].min()} – {fact_testdrive['TestDriveKey'].max()}")
+print(f"VehicleKey:   {fact_testdrive['VehicleKey'].min()} – {fact_testdrive['VehicleKey'].max()}  (expected 101+)")
+print(f"CustomerKey:  {fact_testdrive['CustomerKey'].min()} – {fact_testdrive['CustomerKey'].max()}  (expected 201+)")
+print(f"DealerKey:    {fact_testdrive['DealerKey'].min()} – {fact_testdrive['DealerKey'].max()}  (expected 301+)")
+print(f"ChannelKey:   {fact_testdrive['ChannelKey'].min()} – {fact_testdrive['ChannelKey'].max()}  (expected 701+)")
+conv = outcomes.count("Converted")
+print(f"Converted:    {conv:,} ({conv/len(outcomes)*100:.1f}%)")
+print(f"Not Converted:{len(outcomes)-conv:,} ({(len(outcomes)-conv)/len(outcomes)*100:.1f}%)")
+
+print("\nDone! Both sheets saved to Drive.")
