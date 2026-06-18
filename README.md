@@ -1,4 +1,3 @@
-# Automobile-Sales-and-Campaign-Data-Analysis
 # Automobile Sales & Campaign Data Analysis
 
 > End-to-end data analytics project covering vehicle sales performance, customer segmentation, marketing campaign effectiveness, and multi-model demand forecasting for an automotive business dataset.
