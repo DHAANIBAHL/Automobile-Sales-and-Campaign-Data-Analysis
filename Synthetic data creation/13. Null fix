@@ -1,0 +1,287 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+all_sheets    = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+main          = all_sheets["Car Sales.xlsx - car_data"]
+dim_date      = all_sheets["Dim_Date"]
+dim_vehicle   = all_sheets["Dim_Vehicle"]
+dim_customer  = all_sheets["Dim_Customer"]
+dim_dealer    = all_sheets["Dim_Dealer"]
+dim_region    = all_sheets["Dim_Region"]
+dim_salesexec = all_sheets["Dim_SalesExecutive"]
+dim_channel   = all_sheets["Dim_Channel"]
+dim_campaign  = all_sheets["Dim_Campaign"]
+fact_marketing= all_sheets["Fact_MarketingCampaignPerforman"]  # correct name
+
+np.random.seed(42)
+
+print("Starting fixes...\n")
+
+# ── FIX 1: car_data clean ─────────────────────────────────────────
+main.columns = main.columns.str.strip()
+main["Customer Name"] = main["Customer Name"].fillna("Unknown")
+main["Engine"] = main["Engine"].str.strip().replace({
+    "DoubleÃ‚Â Overhead Camshaft":    "Double Overhead Camshaft",
+    "DoubleÃ‚Â\xa0Overhead Camshaft": "Double Overhead Camshaft",
+})
+main["Date_str"] = pd.to_datetime(main["Date"]).dt.strftime("%Y-%m-%d")
+print(f" FIX 1 — car_data cleaned. Engine values: {main['Engine'].unique()}")
+
+# ── FIX 2: Dim_Date deduplicate ───────────────────────────────────
+dim_date["Date"] = pd.to_datetime(dim_date["Date"]).dt.strftime("%Y-%m-%d")
+dim_date_fixed = dim_date.drop_duplicates(subset=["DateKey"]).reset_index(drop=True)
+print(f"\nFIX 2 — Dim_Date: {len(dim_date):,} → {len(dim_date_fixed):,} unique dates")
+
+# ── FIX 3: Dim_Vehicle deduplicate + date fields ──────────────────
+vehicle_dates = (
+    main.groupby(["Company","Model"])["Date_str"]
+    .agg(FirstSaleDate="min", LastSaleDate="max")
+    .reset_index()
+    .rename(columns={"Company":"Brand"})
+)
+dim_vehicle_fixed = (
+    dim_vehicle
+    .drop_duplicates(subset=["Brand","Model"])
+    .reset_index(drop=True)
+)
+dim_vehicle_fixed["VehicleKey"] = range(101, 101 + len(dim_vehicle_fixed))
+dim_vehicle_fixed = dim_vehicle_fixed.merge(vehicle_dates, on=["Brand","Model"], how="left")
+dim_vehicle_fixed = dim_vehicle_fixed[[
+    "VehicleKey","Brand","Model","BodyType","FuelType",
+    "Transmission","Price","FirstSaleDate","LastSaleDate"
+]]
+print(f"\n FIX 3 — Dim_Vehicle: {len(dim_vehicle):,} → {len(dim_vehicle_fixed):,} unique vehicles")
+
+# ── FIX 4: Dim_Dealer — check cross-city dealers ─────────────────
+# IMPORTANT: work on a fresh copy from original (before any city suffixes)
+dim_dealer_work = dim_dealer.copy()
+
+# Strip any previously appended city suffixes first
+for city in ["Middletown","Aurora","Greenville","Pasco","Janesville","Scottsdale","Austin"]:
+    dim_dealer_work["DealerName"] = dim_dealer_work["DealerName"].str.replace(f" ({city})", "", regex=False)
+
+cross_city = (
+    dim_dealer_work.groupby("DealerName")["City"]
+    .nunique()
+    .reset_index()
+    .rename(columns={"City":"UniqueCities"})
+)
+cross_city_dealers = cross_city[cross_city["UniqueCities"] > 1]["DealerName"].tolist()
+
+if cross_city_dealers:
+    print(f"\nFIX 4 — {len(cross_city_dealers)} dealers found in multiple cities — appending city to name")
+    dim_dealer_work["DealerName"] = dim_dealer_work.apply(
+        lambda r: f"{r['DealerName']} ({r['City']})"
+        if r["DealerName"] in cross_city_dealers else r["DealerName"],
+        axis=1
+    )
+else:
+    print(f"\n FIX 4 — No cross-city duplicates found")
+
+# Add RegionKey FK
+state_to_regionkey = dict(zip(dim_region["State"], dim_region["RegionKey"].astype(int)))
+dim_dealer_work["RegionKey"] = dim_dealer_work["State"].map(state_to_regionkey).astype(int)
+
+dim_dealer_fixed = dim_dealer_work[[
+    "DealerKey","DealerName","DealerType","City","State","RegionKey"
+]].reset_index(drop=True)
+
+print(f"   DealerKey range: {dim_dealer_fixed['DealerKey'].min()} – {dim_dealer_fixed['DealerKey'].max()}")
+print(f"   RegionKey range: {dim_dealer_fixed['RegionKey'].min()} – {dim_dealer_fixed['RegionKey'].max()}")
+
+# ── FIX 5: Dim_Region add City ────────────────────────────────────
+state_to_city = dict(zip(dim_dealer_fixed["State"], dim_dealer_fixed["City"]))
+dim_region["City"] = dim_region["State"].map(state_to_city)
+dim_region_fixed = dim_region[["RegionKey","Country","City","Zone","State"]]
+print(f"\n FIX 5 — Dim_Region: City added")
+
+# ── FIX 6: Dim_Customer add State + fix null ──────────────────────
+city_to_state = dict(zip(dim_dealer_fixed["City"], dim_dealer_fixed["State"]))
+dim_customer["CustomerName"] = dim_customer["CustomerName"].fillna("Unknown")
+dim_customer["State"] = main["Dealer_Region"].map(city_to_state).values
+dim_customer_fixed = dim_customer[[
+    "CustomerKey","CustomerName","Gender","AgeGroup",
+    "IncomeGroup","CustomerType","City","State"
+]]
+print(f"\n FIX 6 — Dim_Customer: State added, null fixed")
+
+# ── FIX 7: Rebuild Fact_VehicleSales ─────────────────────────────
+# DateKey
+date_map  = dict(zip(dim_date_fixed["Date"], dim_date_fixed["DateKey"].astype(int)))
+date_keys = main["Date_str"].map(date_map).fillna(int(dim_date_fixed["DateKey"].iloc[0])).astype(int)
+
+# VehicleKey
+vehicle_map  = {(r["Brand"],r["Model"]): int(r["VehicleKey"]) for _,r in dim_vehicle_fixed.iterrows()}
+vehicle_keys = [vehicle_map.get((r["Company"],r["Model"]), 101) for _,r in main.iterrows()]
+
+# CustomerKey
+customer_keys = dim_customer_fixed["CustomerKey"].values
+
+# DealerKey — build map from ORIGINAL dealer name in main sheet
+# match main Dealer_Name → find correct DealerKey by stripping suffix
+original_to_key = {}
+for _, row in dim_dealer_fixed.iterrows():
+    # strip city suffix to get original name
+    original = row["DealerName"]
+    for city in ["Middletown","Aurora","Greenville","Pasco","Janesville","Scottsdale","Austin"]:
+        original = original.replace(f" ({city})", "")
+    original_to_key.setdefault(original, []).append({
+        "DealerKey": int(row["DealerKey"]),
+        "RegionKey": int(row["RegionKey"]),
+        "City":      row["City"],
+    })
+
+def get_dealer_key(dealer_name, dealer_region):
+    matches = original_to_key.get(dealer_name, [])
+    if not matches:
+        return int(dim_dealer_fixed["DealerKey"].iloc[0])
+    # pick the match whose city matches dealer_region
+    for m in matches:
+        if m["City"] == dealer_region:
+            return m["DealerKey"]
+    return matches[0]["DealerKey"]
+
+def get_region_key(dealer_name, dealer_region):
+    matches = original_to_key.get(dealer_name, [])
+    if not matches:
+        return int(dim_region_fixed["RegionKey"].iloc[0])
+    for m in matches:
+        if m["City"] == dealer_region:
+            return m["RegionKey"]
+    return matches[0]["RegionKey"]
+
+dealer_keys = [
+    get_dealer_key(r["Dealer_Name"], r["Dealer_Region"])
+    for _, r in main.iterrows()
+]
+region_keys = [
+    get_region_key(r["Dealer_Name"], r["Dealer_Region"])
+    for _, r in main.iterrows()
+]
+
+# SalesExecKey
+dealer_exec_map = {}
+for dk, grp in dim_salesexec.groupby("DealerKey"):
+    dealer_exec_map[int(dk)] = grp["SalesExecKey"].astype(int).tolist()
+salesexec_keys = [
+    np.random.choice(dealer_exec_map.get(dk, [int(dim_salesexec["SalesExecKey"].iloc[0])]))
+    for dk in dealer_keys
+]
+
+# ChannelKey + CampaignKey
+channel_keys  = np.random.choice(dim_channel["ChannelKey"].astype(int).values,  size=len(main))
+campaign_keys = np.random.choice(dim_campaign["CampaignKey"].astype(int).values, size=len(main))
+
+sale_amount = main["Price ($)"].values
+discount    = (sale_amount * np.random.uniform(0, 0.15, size=len(main))).round(2)
+
+fact_vehiclesales_fixed = pd.DataFrame({
+    "SalesKey":     range(9001, 9001 + len(main)),
+    "DateKey":      date_keys.values,
+    "VehicleKey":   vehicle_keys,
+    "CustomerKey":  customer_keys,
+    "DealerKey":    dealer_keys,
+    "RegionKey":    region_keys,
+    "SalesExecKey": salesexec_keys,
+    "ChannelKey":   channel_keys,
+    "CampaignKey":  campaign_keys,
+    "UnitsSold":    1,
+    "SaleAmount":   sale_amount,
+    "Discount":     discount,
+})
+
+print(f"\n FIX 7 — Fact_VehicleSales rebuilt")
+print(f"   VehicleKey   range: {fact_vehiclesales_fixed['VehicleKey'].min()} – {fact_vehiclesales_fixed['VehicleKey'].max()}")
+print(f"   DealerKey    range: {fact_vehiclesales_fixed['DealerKey'].min()} – {fact_vehiclesales_fixed['DealerKey'].max()}")
+print(f"   RegionKey    range: {fact_vehiclesales_fixed['RegionKey'].min()} – {fact_vehiclesales_fixed['RegionKey'].max()}")
+print(f"   SalesExecKey range: {min(salesexec_keys)} – {max(salesexec_keys)}")
+print(f"   CampaignKey  range: {fact_vehiclesales_fixed['CampaignKey'].min()} – {fact_vehiclesales_fixed['CampaignKey'].max()}")
+
+# ── FIX 8: Fact_TestDrive remap VehicleKey ────────────────────────
+fact_testdrive = all_sheets["Fact_TestDrive"].copy()
+
+td_vehicle_keys = []
+for vk in fact_testdrive["VehicleKey"]:
+    old_row = dim_vehicle[dim_vehicle["VehicleKey"] == vk]
+    if len(old_row) > 0:
+        new_key = vehicle_map.get(
+            (old_row.iloc[0]["Brand"], old_row.iloc[0]["Model"]), 101
+        )
+    else:
+        new_key = 101
+    td_vehicle_keys.append(new_key)
+
+fact_testdrive["VehicleKey"] = td_vehicle_keys
+fact_testdrive["DealerKey"]  = fact_testdrive["DealerKey"].apply(
+    lambda dk: dk if dk <= int(dim_dealer_fixed["DealerKey"].max())
+    else int(dim_dealer_fixed["DealerKey"].sample(1).values[0])
+)
+print(f"\n FIX 8 — Fact_TestDrive remapped")
+print(f"   VehicleKey range: {fact_testdrive['VehicleKey'].min()} – {fact_testdrive['VehicleKey'].max()}")
+
+# ── WRITE ALL SHEETS ──────────────────────────────────────────────
+sheets_to_write = {
+    "Car Sales.xlsx - car_data":      main.drop(columns=["Date_str"]),
+    "Dim_Date":                        dim_date_fixed,
+    "Dim_Vehicle":                     dim_vehicle_fixed,
+    "Dim_Customer":                    dim_customer_fixed,
+    "Dim_Dealer":                      dim_dealer_fixed,
+    "Dim_Region":                      dim_region_fixed,
+    "Dim_SalesExecutive":              dim_salesexec,
+    "Dim_Campaign":                    dim_campaign,
+    "Dim_Channel":                     dim_channel,
+    "Fact_VehicleSales":               fact_vehiclesales_fixed,
+    "Fact_MarketingCampaignPerforman": fact_marketing,
+    "Fact_TestDrive":                  fact_testdrive,
+}
+
+wb = load_workbook(LOCAL_FILE)
+for sheet_name, df in sheets_to_write.items():
+    if sheet_name not in wb.sheetnames:
+        wb.create_sheet(sheet_name)
+    ws = wb[sheet_name]
+    ws.delete_rows(1, ws.max_row)
+    for col_idx, col_name in enumerate(df.columns, 1):
+        ws.cell(row=1, column=col_idx, value=col_name)
+    for row_idx, row in enumerate(df.itertuples(index=False), 2):
+        for col_idx, value in enumerate(row, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+# ── FINAL VALIDATION ──────────────────────────────────────────────
+print("\n" + "="*60)
+print("FINAL VALIDATION")
+print("="*60)
+pk_cols = {
+    "Car Sales.xlsx - car_data":       "Car_id",
+    "Dim_Date":                         "DateKey",
+    "Dim_Vehicle":                      "VehicleKey",
+    "Dim_Customer":                     "CustomerKey",
+    "Dim_Dealer":                       "DealerKey",
+    "Dim_Region":                       "RegionKey",
+    "Dim_SalesExecutive":               "SalesExecKey",
+    "Dim_Campaign":                     "CampaignKey",
+    "Dim_Channel":                      "ChannelKey",
+    "Fact_VehicleSales":                "SalesKey",
+    "Fact_MarketingCampaignPerforman":  "CampaignFactKey",
+    "Fact_TestDrive":                   "TestDriveKey",
+}
+print(f"\n{'Sheet':<38} {'Rows':>7}  {'Nulls':>6}  {'PK Dupes':>8}")
+print("-"*62)
+for name, df in sheets_to_write.items():
+    short    = name.replace("Car Sales.xlsx - ","")
+    pk       = pk_cols.get(name)
+    pk_dupes = df.duplicated(subset=[pk]).sum() if pk and pk in df.columns else "N/A"
+    nulls    = df.isnull().sum().sum()
+    print(f"   {short:<35} {len(df):>7,}  {nulls:>6}  {str(pk_dupes):>8}")
+
+print("\nAll 4 corrections applied and saved to Drive!")
