@@ -1,0 +1,28 @@
+import pandas as pd
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE  = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets     = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main           = all_sheets["Car Sales.xlsx - car_data"]
+dim_date       = all_sheets["Dim_Date"]
+dim_vehicle    = all_sheets["Dim_Vehicle"]
+dim_customer   = all_sheets["Dim_Customer"]
+dim_dealer     = all_sheets["Dim_Dealer"]
+dim_region     = all_sheets["Dim_Region"]
+dim_salesexec  = all_sheets["Dim_SalesExecutive"]
+dim_channel    = all_sheets["Dim_Channel"]
+
+print("Main columns:",       main.columns.tolist())
+print("Dim_Date columns:",   dim_date.columns.tolist())
+print("Dim_Vehicle cols:",   dim_vehicle.columns.tolist())
+print("Dim_Customer cols:",  dim_customer.columns.tolist())
+print("Dim_Dealer cols:",    dim_dealer.columns.tolist())
+print("Dim_Region cols:",    dim_region.columns.tolist())
+print("Dim_SalesExec cols:", dim_salesexec.columns.tolist())
+print("Dim_Channel cols:",   dim_channel.columns.tolist())
+print("\nMain shape:", main.shape)
+print(main.head(3))
