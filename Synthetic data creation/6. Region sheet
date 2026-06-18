@@ -1,0 +1,67 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+
+# Get unique regions from Dim_Dealer (city + state already mapped)
+dim_dealer = all_sheets["Dim_Dealer"]
+
+# City → Zone mapping based on actual US geography
+city_to_zone = {
+    "Middletown": "Midwest",
+    "Aurora":     "West",
+    "Greenville": "South",
+    "Pasco":      "West",
+    "Janesville": "Midwest",
+    "Scottsdale": "West",
+    "Austin":     "South",
+}
+
+city_to_state = {
+    "Middletown": "Ohio",
+    "Aurora":     "Colorado",
+    "Greenville": "South Carolina",
+    "Pasco":      "Washington",
+    "Janesville": "Wisconsin",
+    "Scottsdale": "Arizona",
+    "Austin":     "Texas",
+}
+
+# Build one row per unique region
+unique_cities = list(city_to_zone.keys())
+
+dim_region = pd.DataFrame({
+    "RegionKey": range(401, 401 + len(unique_cities)),
+    "Country":   "United States",
+    "Zone":      [city_to_zone[c] for c in unique_cities],
+    "State":     [city_to_state[c] for c in unique_cities],
+})
+
+# Write to Dim_Region sheet
+wb = load_workbook(LOCAL_FILE)
+
+if "Dim_Region" not in wb.sheetnames:
+    wb.create_sheet("Dim_Region")
+
+ws = wb["Dim_Region"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_region.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_region.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_region.to_string())
