@@ -1,0 +1,56 @@
+import pandas as pd
+import numpy as np
+from openpyxl import load_workbook
+import shutil
+
+DRIVE_FILE = "/content/drive/MyDrive/Car Sales.xlsx"
+LOCAL_FILE = "/content/Car Sales.xlsx"
+
+shutil.copy(DRIVE_FILE, LOCAL_FILE)
+
+all_sheets = pd.read_excel(LOCAL_FILE, sheet_name=None)
+main = all_sheets["Car Sales.xlsx - car_data"]
+
+np.random.seed(42)
+n = len(main)
+
+# Real cities near each dealer city
+region_city_map = {
+    "Middletown": ["Middletown", "Dayton", "Cincinnati", "Hamilton", "Springboro"],
+    "Aurora":     ["Aurora", "Denver", "Lakewood", "Centennial", "Englewood"],
+    "Greenville": ["Greenville", "Spartanburg", "Anderson", "Simpsonville", "Greer"],
+    "Pasco":      ["Pasco", "Kennewick", "Richland", "Yakima", "Walla Walla"],
+    "Janesville": ["Janesville", "Madison", "Beloit", "Rockford", "Kenosha"],
+    "Scottsdale": ["Scottsdale", "Phoenix", "Tempe", "Mesa", "Chandler"],
+    "Austin":     ["Austin", "Round Rock", "Cedar Park", "Georgetown", "Pflugerville"],
+}
+
+def assign_city(region):
+    cities = region_city_map.get(region, [region])
+    return np.random.choice(cities)
+
+city = main["Dealer_Region"].apply(assign_city)
+
+# Read existing Dim_Customer sheet to preserve all other columns
+dim_customer = pd.read_excel(LOCAL_FILE, sheet_name="Dim_Customer")
+
+# Update City column only
+dim_customer["City"] = city.values
+
+# Write back
+wb = load_workbook(LOCAL_FILE)
+ws = wb["Dim_Customer"]
+ws.delete_rows(1, ws.max_row)
+
+for col_idx, col_name in enumerate(dim_customer.columns, 1):
+    ws.cell(row=1, column=col_idx, value=col_name)
+
+for row_idx, row in enumerate(dim_customer.itertuples(index=False), 2):
+    for col_idx, value in enumerate(row, 1):
+        ws.cell(row=row_idx, column=col_idx, value=value)
+
+wb.save(LOCAL_FILE)
+shutil.copy(LOCAL_FILE, DRIVE_FILE)
+
+print("Done!")
+print(dim_customer[["CustomerName", "City"]].head(10))
