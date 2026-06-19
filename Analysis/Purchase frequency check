@@ -1,0 +1,10 @@
+# Check purchase frequency distribution
+print("Purchase frequency distribution:")
+print(clv["Purchases"].value_counts().sort_index().to_string())
+print(f"\nCustomers with only 1 purchase: {(clv['Purchases']==1).sum():,} ({(clv['Purchases']==1).mean()*100:.1f}%)")
+print(f"Customers with 2+ purchases:    {(clv['Purchases']>=2).sum():,} ({(clv['Purchases']>=2).mean()*100:.1f}%)")
+print(f"\nCLV stats:")
+print(f"   Min:    ${clv['CLV'].min():,.0f}")
+print(f"   Max:    ${clv['CLV'].max():,.0f}")
+print(f"   Mean:   ${clv['CLV'].mean():,.0f}")
+print(f"   Median: ${clv['CLV'].median():,.0f}")
