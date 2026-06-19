@@ -1,0 +1,199 @@
+# Funnel charts
+import matplotlib.pyplot as plt
+import matplotlib.patches as FancyBboxPatch
+import numpy as np
+
+# Data from Fact_MarketingCampaignPerforman
+total_imp   = fmc["Impressions"].sum()
+total_leads = fmc["Leads"].sum()
+total_tds   = fmc["TestDrives"].sum()
+total_book  = fmc["Bookings"].sum()
+
+stages = ["Impressions", "Leads", "Test Drives", "Bookings"]
+values = [total_imp, total_leads, total_tds, total_book]
+colors = ["#2E75B6", "#F4A261", "#70AD47", "#FFC000"]
+
+# Conversion rates between stages
+conv_rates = [
+    100,
+    total_leads / total_imp  * 100,
+    total_tds   / total_leads * 100,
+    total_book  / total_tds   * 100,
+]
+
+fig, ax = plt.subplots(figsize=(10, 9))
+ax.set_xlim(0, 10)
+ax.set_ylim(0, 10)
+ax.axis("off")
+
+n       = len(stages)
+height  = 9.5 / n          # height of each trapezoid
+max_w   = 9.0               # widest point (top)
+min_w   = 1.5               # narrowest point (bottom)
+
+for i, (stage, val, color, rate) in enumerate(zip(stages, values, colors, conv_rates)):
+    # Each layer gets narrower going down
+    top_w    = max_w - (max_w - min_w) * (i / n)
+    bot_w    = max_w - (max_w - min_w) * ((i + 1) / n)
+    top_y    = 10 - i * height
+    bot_y    = 10 - (i + 1) * height
+
+    top_left  = (5 - top_w / 2, top_y)
+    top_right = (5 + top_w / 2, top_y)
+    bot_right = (5 + bot_w / 2, bot_y)
+    bot_left  = (5 - bot_w / 2, bot_y)
+
+    # Draw trapezoid
+    trap = plt.Polygon(
+        [top_left, top_right, bot_right, bot_left],
+        closed=True,
+        facecolor=color,
+        edgecolor="white",
+        linewidth=2,
+        alpha=0.92,
+        zorder=2,
+    )
+    ax.add_patch(trap)
+
+    # Stage label — centre of trapezoid
+    mid_y = (top_y + bot_y) / 2
+    ax.text(5, mid_y + 0.10,
+            stage,
+            ha="center", va="center",
+            fontsize=13, fontweight="bold", color="white", zorder=3)
+
+    # Value below stage name
+    ax.text(5, mid_y - 0.28,
+            f"{val:,.0f}",
+            ha="center", va="center",
+            fontsize=11, color="white", zorder=3)
+
+    # Conversion rate on the right side (except first stage)
+    if i > 0:
+        ax.text(5 + top_w / 2 + 0.15, top_y - 0.10,
+                f"↓ {rate:.1f}% from previous",
+                ha="left", va="center",
+                fontsize=8.5, color="#444444", style="italic", zorder=3)
+
+ax.set_title("Marketing Campaign Conversion Funnel\n"
+             "Impressions → Leads → Test Drives → Bookings",
+             fontsize=14, fontweight="bold", pad=12)
+
+plt.tight_layout()
+plt.savefig("/content/a3_funnel_proper.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Chart: Funnel by Channel — TDs vs Converted
+ch_funnel = (
+    td_data.groupby("ChannelName")["Converted"]
+    .agg(TotalTDs="count", Converted="sum")
+    .reset_index()
+    .sort_values("TotalTDs", ascending=False)
+)
+ch_funnel["NotConverted"] = ch_funnel["TotalTDs"] - ch_funnel["Converted"]
+ch_funnel["ConvRate%"]    = (ch_funnel["Converted"] / ch_funnel["TotalTDs"] * 100).round(1)
+
+fig, ax = plt.subplots(figsize=(13, 9))
+y        = np.arange(len(ch_funnel))
+bar_h    = 0.35
+
+bars1 = ax.barh(y + bar_h/2, ch_funnel["TotalTDs"],
+                height=bar_h, color="#2E75B6", alpha=0.85,
+                label="Total Test Drives")
+bars2 = ax.barh(y - bar_h/2, ch_funnel["Converted"],
+                height=bar_h, color="#70AD47", alpha=0.85,
+                label="Converted")
+
+# Value labels
+for bar, val in zip(bars1, ch_funnel["TotalTDs"]):
+    ax.text(bar.get_width() + 5, bar.get_y() + bar.get_height()/2,
+            f"{int(val):,}", va="center", ha="left", fontsize=8, fontweight="bold")
+
+for bar, val, rate in zip(bars2, ch_funnel["Converted"], ch_funnel["ConvRate%"]):
+    ax.text(bar.get_width() + 5, bar.get_y() + bar.get_height()/2,
+            f"{int(val):,}  ({rate}%)", va="center", ha="left",
+            fontsize=8, fontweight="bold", color="#2A7A00")
+
+ax.set_yticks(y)
+ax.set_yticklabels(ch_funnel["ChannelName"], fontsize=9)
+ax.set_xlabel("Number of Test Drives", fontsize=11)
+ax.set_title("Test Drives vs Conversions by Channel",
+             fontsize=14, fontweight="bold")
+ax.legend(fontsize=10, loc="lower right")
+ax.margins(x=0.18)
+plt.tight_layout()
+plt.savefig("/content/a4_funnel_channel.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Chart: Funnel by Brand — TDs vs Converted
+brand_funnel = (
+    td_data.groupby("Brand")["Converted"]
+    .agg(TotalTDs="count", Converted="sum")
+    .reset_index()
+    .sort_values("TotalTDs", ascending=False)
+)
+brand_funnel["NotConverted"] = brand_funnel["TotalTDs"] - brand_funnel["Converted"]
+brand_funnel["ConvRate%"]    = (brand_funnel["Converted"] / brand_funnel["TotalTDs"] * 100).round(1)
+
+fig, ax = plt.subplots(figsize=(13, 10))
+y     = np.arange(len(brand_funnel))
+bar_h = 0.35
+
+bars1 = ax.barh(y + bar_h/2, brand_funnel["TotalTDs"],
+                height=bar_h, color="#1F3864", alpha=0.85,
+                label="Total Test Drives")
+bars2 = ax.barh(y - bar_h/2, brand_funnel["Converted"],
+                height=bar_h, color="#70AD47", alpha=0.85,
+                label="Converted")
+
+for bar, val in zip(bars1, brand_funnel["TotalTDs"]):
+    ax.text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2,
+            f"{int(val):,}", va="center", ha="left", fontsize=8, fontweight="bold")
+
+for bar, val, rate in zip(bars2, brand_funnel["Converted"], brand_funnel["ConvRate%"]):
+    ax.text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2,
+            f"{int(val):,}  ({rate}%)", va="center", ha="left",
+            fontsize=8, fontweight="bold", color="#2A7A00")
+
+ax.set_yticks(y)
+ax.set_yticklabels(brand_funnel["Brand"], fontsize=9)
+ax.set_xlabel("Number of Test Drives", fontsize=11)
+ax.set_title("Test Drives vs Conversions by Brand",
+             fontsize=14, fontweight="bold")
+ax.legend(fontsize=10, loc="lower right")
+ax.margins(x=0.18)
+plt.tight_layout()
+plt.savefig("/content/a4_funnel_brand.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# ── Chart: Stacked bar — Converted vs Not Converted by Channel ───
+# Shows the full composition of each channel's test drives
+ch_stacked = ch_funnel.sort_values("ConvRate%", ascending=True)
+
+fig, ax = plt.subplots(figsize=(11, 9))
+y     = np.arange(len(ch_stacked))
+bar_h = 0.5
+
+ax.barh(y, ch_stacked["Converted"],    height=bar_h,
+        color="#70AD47", alpha=0.85, label="Converted")
+ax.barh(y, ch_stacked["NotConverted"], height=bar_h,
+        left=ch_stacked["Converted"],
+        color="#E63946", alpha=0.75, label="Not Converted")
+
+# Conversion rate labels at end of each bar
+for i, (total, conv, rate) in enumerate(zip(
+        ch_stacked["TotalTDs"], ch_stacked["Converted"], ch_stacked["ConvRate%"])):
+    ax.text(total + 5, i, f"{rate}%",
+            va="center", ha="left", fontsize=9, fontweight="bold", color="#1F3864")
+
+ax.set_yticks(y)
+ax.set_yticklabels(ch_stacked["ChannelName"], fontsize=9)
+ax.set_xlabel("Number of Test Drives", fontsize=11)
+ax.set_title("Test Drive Outcomes by Channel\n(Sorted by Conversion Rate — lowest to highest)",
+             fontsize=13, fontweight="bold")
+ax.legend(fontsize=10, loc="lower right")
+ax.margins(x=0.12)
+plt.tight_layout()
+plt.savefig("/content/a4_stacked_channel.png", dpi=150, bbox_inches="tight")
+plt.show()
+print("Analysis 4 additional charts complete")
