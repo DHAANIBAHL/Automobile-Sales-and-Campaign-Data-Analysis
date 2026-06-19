@@ -1,0 +1,289 @@
+# ANALYSIS 6: Data preparation
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from IPython.display import display
+
+sales_time = fvs.merge(dim_date, on="DateKey", how="left")
+
+# 6a Monthly aggregation (trend analysis + forecasting input)
+monthly = (
+    sales_time.groupby(["Year","Month","MonthName","Quarter"])
+    .agg(UnitsSold=("UnitsSold","sum"), Revenue=("SaleAmount","sum"))
+    .reset_index().sort_values(["Year","Month"])
+)
+
+monthly["Period"] = monthly["Year"].astype(str) + "-" + monthly["Month"].astype(str).str.zfill(2)
+
+# 6b Quarterly aggregation (executive-level performance tracking)
+quarterly = (
+    sales_time.groupby(["Year","Quarter"])
+    .agg(UnitsSold=("UnitsSold","sum"), Revenue=("SaleAmount","sum"))
+    .reset_index().sort_values(["Year","Quarter"])
+)
+
+quarterly["QoQ_Growth%"] = quarterly["Revenue"].pct_change().mul(100).round(2)
+
+# 6c Seasonality analysis (monthly behavior vs annual average)
+month_order = ["January","February","March","April","May","June",
+               "July","August","September","October","November","December"]
+
+month_avg = (
+    monthly.groupby("MonthName")
+    .agg(AvgUnits=("UnitsSold","mean"), AvgRevenue=("Revenue","mean"))
+    .reset_index()
+)
+
+month_avg["MonthName"] = pd.Categorical(month_avg["MonthName"], categories=month_order, ordered=True)
+month_avg = month_avg.sort_values("MonthName")
+
+month_avg["VsAvg%"] = (
+    (month_avg["AvgUnits"] - month_avg["AvgUnits"].mean()) /
+    month_avg["AvgUnits"].mean() * 100
+).round(1)
+
+# 6d Weekday vs Weekend comparison
+day_perf = (
+    sales_time.groupby("IsWeekend")
+    .agg(UnitsSold=("UnitsSold","sum"), AvgRevenue=("SaleAmount","mean"), Transactions=("SalesKey","count"))
+    .reset_index()
+)
+
+# 6e Time series preparation for forecasting
+ts       = monthly["UnitsSold"].values
+hw       = ExponentialSmoothing(ts, trend="add", seasonal="add", seasonal_periods=12).fit()
+forecast = hw.forecast(6)
+fitted   = hw.fittedvalues
+
+# 6f Forecast accuracy (MAPE)
+mape = abs((ts - fitted) / ts).mean() * 100
+
+forecast_df = pd.DataFrame({
+    "Month":         [f"Month +{i}" for i in range(1,7)],
+    "ForecastUnits": [int(v) for v in forecast],
+    "Confidence":    ["High" if mape < 10 else "Moderate"] * 6,
+})
+
+next_month   = int(forecast[0])
+safety_stock = int(next_month * 0.15)
+
+inv_df = pd.DataFrame({
+    "Item":  ["Forecasted Demand","Safety Stock (+15%)","Recommended Order","Lead Time","Action"],
+    "Value": [f"{next_month:,} units", f"{safety_stock:,} units",
+              f"{next_month+safety_stock:,} units", "45 days", "Place order now"],
+})
+
+monthly.index = range(1, len(monthly) + 1)
+quarterly.index = range(1, len(quarterly) + 1)
+month_avg.index = range(1, len(month_avg) + 1)
+day_perf.index = range(1, len(day_perf) + 1)
+forecast_df.index = range(1, len(forecast_df) + 1)
+inv_df.index = range(1, len(inv_df) + 1)
+
+
+print("  6.1. Monthly Sales Time Series")
+display(
+    monthly[["Period","MonthName","Quarter","UnitsSold","Revenue"]]
+    .sort_values("Period")
+    .style.format({
+        "UnitsSold": "{:,}",
+        "Revenue": "${:,.0f}"
+    })
+)
+
+print("  6.2. Quarterly Sales + QoQ Growth")
+display(
+    quarterly.sort_values(["Year","Quarter"])
+    .style.format({
+        "UnitsSold": "{:,}",
+        "Revenue": "${:,.0f}",
+        "QoQ_Growth%": "{:.2f}%"
+    })
+)
+
+print("  6.3. Monthly Seasonality vs Annual Average")
+display(
+    month_avg
+    .style.format({
+        "AvgUnits": "{:.2f}",
+        "AvgRevenue": "${:,.0f}",
+        "VsAvg%": "{:.2f}%"
+    })
+)
+
+print("  6.4. Weekday vs Weekend Sales")
+display(
+    day_perf
+    .style.format({
+        "UnitsSold": "{:,}",
+        "AvgRevenue": "${:,.0f}",
+        "Transactions": "{:,}"
+    })
+)
+
+print(f"  6.5. 6-Month Forecast — MAPE: {mape:.1f}%")
+display(
+    forecast_df
+    .style.format({
+        "ForecastUnits": "{:,}"
+    })
+)
+
+print("  6.6. Inventory Planning Recommendation")
+display(inv_df)
+
+# Charts
+# Chart 1: Monthly Units Sold
+fig, ax = plt.subplots(figsize=(14, 6))
+ax.plot(monthly["Period"], monthly["UnitsSold"],
+        color="#2E75B6", linewidth=2, marker="o", markersize=5)
+for i, (period, val) in enumerate(zip(monthly["Period"], monthly["UnitsSold"])):
+    ax.annotate(f"{int(val):,}",
+                xy=(i, val),
+                xytext=(0, 8),
+                textcoords="offset points",
+                ha="center", va="bottom",
+                fontsize=7, fontweight="bold", color="#1F3864")
+ax.set_title("Monthly Units Sold", fontsize=14, fontweight="bold")
+ax.set_ylabel("Units")
+ax.tick_params(axis='x', rotation=45)
+ax.margins(y=0.15)
+plt.tight_layout()
+plt.savefig("/content/a6_chart1_monthly_units.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Chart 2: Holt-Winters Forecast
+fig, ax = plt.subplots(figsize=(18, 7))
+
+hist_labels     = monthly["Period"].tolist()
+forecast_labels = [f"+{i}mo" for i in range(1, 7)]
+all_labels      = hist_labels + forecast_labels
+hist_len        = len(ts)
+all_x           = list(range(len(all_labels)))
+
+fitted_extended_x = list(range(hist_len)) + [hist_len]
+fitted_extended_y = list(fitted)          + [forecast[0]]
+
+forecast_extended_x = list(range(hist_len - 1, hist_len + 6))
+forecast_extended_y = [fitted[-1]] + list(forecast)
+
+ax.plot(range(hist_len), ts,
+        color="#2E75B6", linewidth=2, label="Actual sales")
+
+ax.plot(fitted_extended_x, fitted_extended_y,
+        color="#70AD47", linewidth=1.5, linestyle="--",
+        label="Model fit (how well model matches history)")
+
+ax.plot(forecast_extended_x, forecast_extended_y,
+        color="#FFC000", linewidth=2.5, linestyle="--",
+        marker="o", markersize=7, label="6-month forecast")
+
+ax.axvline(hist_len-0.5, color="red", linestyle=":",
+           linewidth=1.2, label="Forecast start")
+
+for i, val in enumerate(ts):
+    ax.annotate(f"{int(val):,}",
+                xy=(i, val), xytext=(0, 8),
+                textcoords="offset points",
+                ha="center", va="bottom",
+                fontsize=6.5, color="#2E75B6", fontweight="bold")
+
+for i, val in enumerate(fitted):
+    ax.annotate(f"{int(val):,}",
+                xy=(i, val), xytext=(0, -14),
+                textcoords="offset points",
+                ha="center", va="top",
+                fontsize=6.5, color="#509030", fontweight="bold")
+
+for i, val in enumerate(forecast):
+    ax.annotate(f"{int(val):,}",
+                xy=(hist_len + i, val), xytext=(0, 10),
+                textcoords="offset points",
+                ha="center", va="bottom",
+                fontsize=9, fontweight="bold", color="#CC8800")
+
+ax.set_xticks(all_x)
+ax.set_xticklabels(all_labels, rotation=90, ha="center", fontsize=7.5)
+
+ax.axvspan(hist_len-0.5, len(all_x)-0.5,
+           alpha=0.08, color="#FFC000", label="Forecast region")
+
+ax.set_title("Holt-Winters 6-Month Demand Forecast",
+             fontsize=14, fontweight="bold")
+ax.set_xlabel("Month / Forecast Period", fontsize=11)
+ax.set_ylabel("Units Sold", fontsize=11)
+ax.margins(y=0.30)
+ax.legend(loc="upper left", fontsize=9)
+ax.grid(axis="x", alpha=0.2)
+plt.tight_layout()
+plt.savefig("/content/a6_chart2_forecast.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Chart 3: Seasonality
+from matplotlib.patches import Patch
+
+fig, ax = plt.subplots(figsize=(13, 6))
+avg_line   = month_avg["AvgUnits"].mean()
+bar_colors = ["#70AD47" if v >= 0 else "#2E75B6" for v in month_avg["VsAvg%"]]
+
+bars = ax.bar(month_avg["MonthName"], month_avg["AvgUnits"],
+              color=bar_colors, alpha=0.85, zorder=2)
+
+ax.plot(month_avg["MonthName"], month_avg["AvgUnits"],
+        color="#1F3864", linewidth=2, marker="o",
+        markersize=6, zorder=3, label="_nolegend_")
+
+for bar, val in zip(bars, month_avg["AvgUnits"]):
+    ax.text(bar.get_x() + bar.get_width()/2,
+            bar.get_height() + bar.get_height()*0.01,
+            f"{val:.0f}", ha="center", va="bottom",
+            fontsize=9, fontweight="bold")
+
+ax.axhline(avg_line, color="red", linestyle="--",
+           linewidth=1.2, zorder=1)
+
+legend_elements = [
+    Patch(facecolor="#70AD47", alpha=0.85, label="Above annual average"),
+    Patch(facecolor="#2E75B6", alpha=0.85, label="Below annual average"),
+    plt.Line2D([0],[0], color="#1F3864", linewidth=2,
+               marker="o", markersize=6, label="Monthly trend line"),
+    plt.Line2D([0],[0], color="red", linestyle="--",
+               linewidth=1.2, label=f"Annual avg ({avg_line:.0f} units)"),
+]
+ax.legend(handles=legend_elements, loc="upper left", fontsize=9)
+
+ax.set_title("Avg Monthly Units Sold — Seasonality Pattern",
+             fontsize=14, fontweight="bold")
+ax.set_ylabel("Avg Units")
+ax.tick_params(axis='x', rotation=45)
+ax.margins(y=0.15)
+plt.tight_layout()
+plt.savefig("/content/a6_chart3_seasonality.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+# Chart 4: Quarterly Units Sold
+fig, ax = plt.subplots(figsize=(10, 5))
+q_label = quarterly["Year"].astype(str) + " " + quarterly["Quarter"]
+x       = range(len(q_label))
+
+bars = ax.bar(x, quarterly["UnitsSold"], color="#1F3864", alpha=0.85, zorder=2)
+
+ax.plot(list(x), quarterly["UnitsSold"].tolist(),
+        color="#FFC000", linewidth=2.5, marker="o",
+        markersize=7, zorder=3, label="Quarterly trend")
+
+for bar, val in zip(bars, quarterly["UnitsSold"]):
+    ax.text(bar.get_x() + bar.get_width()/2,
+            bar.get_height() + bar.get_height()*0.01,
+            f"{int(val):,}", ha="center", va="bottom",
+            fontsize=10, fontweight="bold", color="#1F3864")
+
+ax.set_xticks(list(x))
+ax.set_xticklabels(q_label, rotation=30)
+ax.set_title("Quarterly Units Sold", fontsize=14, fontweight="bold")
+ax.set_ylabel("Units")
+ax.margins(y=0.15)
+ax.legend(loc="upper left", fontsize=9)
+plt.tight_layout()
+plt.savefig("/content/a6_chart4_quarterly.png", dpi=150, bbox_inches="tight")
+plt.show()
+
+print("Analysis 6 complete")
