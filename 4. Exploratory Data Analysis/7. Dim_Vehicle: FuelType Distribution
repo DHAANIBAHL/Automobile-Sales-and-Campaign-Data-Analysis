@@ -1,0 +1,92 @@
+# 7. Dim_Vehicle: FuelType Distribution
+print("EDA: DIM_VEHICLE")
+
+print(f"\nShape: {dim_vehicle.shape[0]:,} rows × {dim_vehicle.shape[1]} columns")
+print(f"Duplicates: {dim_vehicle.duplicated().sum()}")
+
+missing = dim_vehicle.isnull().sum()
+missing_df = pd.DataFrame({
+    "Column":        missing.index,
+    "Missing Count": missing.values,
+    "Missing %":     (missing.values / len(dim_vehicle) * 100).round(2)
+})
+missing_df = missing_df[missing_df["Missing Count"] > 0].reset_index(drop=True)
+print("\nMissing Values:")
+display(missing_df)
+
+print("\nPrice Statistics:")
+display(dim_vehicle["Price"].describe().round(2))
+print(f"  Prices below $5,000:   {(dim_vehicle['Price'] < 5000).sum()} vehicles")
+print(f"  Prices above $100,000: {(dim_vehicle['Price'] > 100000).sum()} vehicles")
+
+print("\nFuelType Distribution:")
+display(dim_vehicle["FuelType"].value_counts(dropna=False))
+print("\nBodyType Distribution:")
+display(dim_vehicle["BodyType"].value_counts(dropna=False))
+print("\nTop 10 Brands:")
+display(dim_vehicle["Brand"].value_counts().head(10))
+
+# Chart
+fuel   = dim_vehicle["FuelType"].value_counts(dropna=False)
+labels = [str(l) for l in fuel.index]
+values = list(fuel.values)
+colors = ["#2E4A6E","#3A7CA5","#E63946","#70AD47","#F4C542"][:len(labels)]
+
+fig, ax = plt.subplots(figsize=(10, 5))
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+bars = ax.bar(range(len(labels)), values, color=colors, width=0.5, zorder=2)
+
+for bar, val in zip(bars, values):
+    ax.text(
+        bar.get_x() + bar.get_width()/2,
+        bar.get_height() + max(values)*0.02,
+        f"{val}\n({val/len(dim_vehicle)*100:.1f}%)",
+        ha="center",
+        va="bottom",
+        fontsize=11,
+        fontweight="bold",
+        color="black"
+    )
+
+ax.plot(
+    range(len(values)),
+    values,
+    color="#F4C542",
+    marker="o",
+    linewidth=2.5,
+    markersize=8,
+    zorder=3,
+    label="Trend"
+)
+
+ax.set_title(
+    "Dim_Vehicle — FuelType Distribution",
+    fontsize=14,
+    fontweight="bold",
+    color="black",
+    pad=15
+)
+
+ax.set_xticks(range(len(labels)))
+ax.set_xticklabels(labels, fontsize=11, color="black")
+
+ax.set_ylabel("Count", fontsize=11, color="black")
+
+for spine in ["top", "right"]:
+    ax.spines[spine].set_visible(False)
+
+ax.spines["left"].set_visible(True)
+ax.spines["bottom"].set_visible(True)
+ax.spines["left"].set_color("black")
+ax.spines["bottom"].set_color("black")
+
+ax.tick_params(axis="both", colors="black")
+
+ax.margins(y=0.2)
+
+ax.legend()
+
+plt.tight_layout()
+plt.show()
