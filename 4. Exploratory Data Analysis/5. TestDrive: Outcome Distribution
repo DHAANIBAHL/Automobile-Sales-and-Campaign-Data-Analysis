@@ -1,0 +1,95 @@
+# 5. Fact_TestDrive: Outcome Distribution
+print("EDA: FACT_TESTDRIVE")
+
+print(f"\nShape: {ftd.shape[0]:,} rows × {ftd.shape[1]} columns")
+print(f"Duplicates: {ftd.duplicated().sum()}")
+
+missing = ftd.isnull().sum()
+missing_df = pd.DataFrame({
+    "Column":        missing.index,
+    "Missing Count": missing.values,
+    "Missing %":     (missing.values / len(ftd) * 100).round(2)
+})
+missing_df = missing_df[missing_df["Missing Count"] > 0].reset_index(drop=True)
+print("\nMissing Values:")
+display(missing_df)
+
+outcome   = ftd["Outcome"].value_counts(dropna=False)
+conv_rate = (ftd["Outcome"] == "Converted").sum() / ftd["Outcome"].notna().sum() * 100
+print("\nOutcome Distribution:")
+display(outcome)
+print(f"\n  Conversion Rate (excl. nulls): {conv_rate:.1f}%")
+
+# Chart
+labels = [str(l) for l in outcome.index]
+values = list(outcome.values)
+
+colors = ["#2E4A6E", "#E63946", "#70AD47"][:len(labels)]
+
+fig, ax = plt.subplots(figsize=(10, 5))
+
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+bars = ax.bar(
+    range(len(labels)),
+    values,
+    color=colors,
+    width=0.5,
+    zorder=2
+)
+
+for bar, val in zip(bars, values):
+    ax.text(
+        bar.get_x() + bar.get_width() / 2,
+        bar.get_height() + max(values) * 0.02,
+        f"{val:,}\n({val/len(ftd)*100:.1f}%)",
+        ha="center",
+        va="bottom",
+        fontsize=11,
+        fontweight="bold",
+        color="black"
+    )
+
+ax.plot(
+    range(len(values)),
+    values,
+    color="#F4C542",
+    marker="o",
+    linewidth=2.5,
+    markersize=8,
+    zorder=3,
+    label="Trend"
+)
+
+ax.set_title(
+    "Fact_TestDrive — Outcome Distribution",
+    fontsize=14,
+    fontweight="bold",
+    color="black",
+    pad=15
+)
+
+ax.set_xticks(range(len(labels)))
+ax.set_xticklabels(labels, fontsize=11, color="black")
+ax.set_xlabel("Outcome", fontsize=11, color="black", labelpad=10)
+
+ax.set_ylabel("Count", fontsize=11, color="black")
+
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+
+ax.spines["left"].set_visible(True)
+ax.spines["bottom"].set_visible(True)
+
+ax.spines["left"].set_color("black")
+ax.spines["bottom"].set_color("black")
+
+ax.tick_params(axis="both", colors="black")
+
+ax.margins(y=0.3)
+
+ax.legend(facecolor="white", edgecolor="black")
+
+plt.tight_layout()
+plt.show()
