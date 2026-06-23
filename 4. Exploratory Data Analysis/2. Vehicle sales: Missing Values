@@ -1,0 +1,73 @@
+
+# 2. Fact_VehicleSales: Missing Values
+print("EDA — FACT_VEHICLESALES")
+
+print(f"\nShape: {fvs.shape[0]:,} rows × {fvs.shape[1]} columns")
+print(f"Duplicates: {fvs.duplicated().sum()}")
+
+missing = fvs.isnull().sum()
+missing_df = pd.DataFrame({
+    "Column":        missing.index,
+    "Missing Count": missing.values,
+    "Missing %":     (missing.values / len(fvs) * 100).round(2)
+})
+missing_df = missing_df[missing_df["Missing Count"] > 0].reset_index(drop=True)
+print("\nMissing Values:")
+display(missing_df)
+
+print("\nDescriptive Statistics:")
+display(fvs[["SaleAmount","Discount","UnitsSold"]].describe().round(2))
+
+q1  = fvs["SaleAmount"].quantile(0.25)
+q3  = fvs["SaleAmount"].quantile(0.75)
+iqr = q3 - q1
+outliers = fvs[(fvs["SaleAmount"] < q1-1.5*iqr) | (fvs["SaleAmount"] > q3+1.5*iqr)]
+print("\nOutlier & Validity Checks:")
+print(f"  SaleAmount outliers (IQR): {len(outliers):,} rows ({len(outliers)/len(fvs)*100:.1f}%)")
+print(f"  Negative Discounts:        {(fvs['Discount']<0).sum():,} rows")
+print(f"  Discount > SaleAmount:     {(fvs['Discount']>fvs['SaleAmount']).sum():,} rows")
+print(f"  UnitsSold ≠ 1:             {(fvs['UnitsSold']!=1).sum():,} rows")
+
+# Chart
+missing_cols = missing[missing > 0]
+labels = list(missing_cols.index)
+values = list(missing_cols.values)
+
+fig, ax = plt.subplots(figsize=(12, 5))
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+bars = ax.bar(range(len(labels)), values, color="#2E4A6E", width=0.5, zorder=2)
+for bar, val in zip(bars, values):
+    ax.text(bar.get_x() + bar.get_width()/2,
+            bar.get_height() + max(values)*0.01,
+            f"{val:,}\n({val/len(fvs)*100:.1f}%)",
+            ha="center", va="bottom",
+            fontsize=10, fontweight="bold", color="#1E2A3A")
+
+ax.plot(range(len(values)), values, color="#F4C542",
+        marker="o", linewidth=2.5, markersize=8, zorder=3, label="Trend")
+
+ax.set_title("Fact_VehicleSales — Missing Values per Column",
+             fontsize=14, fontweight="bold", color="#1E2A3A", pad=15)
+ax.set_xticks(range(len(labels)))
+ax.set_xticklabels(labels, color="#1E2A3A", fontsize=11)
+
+ax.set_xlabel("Column", color="#1E2A3A", fontsize=11)
+ax.tick_params(axis="x", colors="#1E2A3A", labelsize=10)
+ax.spines["bottom"].set_visible(True)
+ax.spines["bottom"].set_color("#1E2A3A")
+
+ax.set_ylabel("Missing Count", color="#1E2A3A", fontsize=11)
+ax.yaxis.set_visible(True)
+ax.tick_params(axis="y", colors="#1E2A3A", labelsize=10)
+ax.spines["left"].set_visible(True)
+ax.spines["left"].set_color("#1E2A3A")
+
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+ax.margins(y=0.3)
+ax.legend(facecolor="white", labelcolor="#1E2A3A", fontsize=10)
+
+plt.tight_layout()
+plt.show()
