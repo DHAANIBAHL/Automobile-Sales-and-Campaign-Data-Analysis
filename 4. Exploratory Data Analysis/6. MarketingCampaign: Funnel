@@ -1,0 +1,73 @@
+# 6. Fact_MarketingCampaign: Funnel
+print("EDA: FACT_MARKETINGCAMPAIGN")
+
+print(f"\nShape: {fmc.shape[0]:,} rows × {fmc.shape[1]} columns")
+print(f"Duplicates: {fmc.duplicated().sum()}")
+
+missing = fmc.isnull().sum()
+missing_df = pd.DataFrame({
+    "Column":        missing.index,
+    "Missing Count": missing.values,
+    "Missing %":     (missing.values / len(fmc) * 100).round(2)
+})
+missing_df = missing_df[missing_df["Missing Count"] > 0].reset_index(drop=True)
+print("\nMissing Values:")
+display(missing_df)
+
+print("\nDescriptive Statistics:")
+display(fmc[["Impressions","Leads","TestDrives","Bookings",
+             "CampaignCost","RevenueGenerated"]].describe().round(2))
+
+fmc_clean      = fmc.dropna(subset=["CampaignCost","RevenueGenerated"])
+fmc_clean      = fmc_clean[fmc_clean["CampaignCost"] > 0].copy()
+fmc_clean["ROI%"] = ((fmc_clean["RevenueGenerated"] - fmc_clean["CampaignCost"]) /
+                      fmc_clean["CampaignCost"] * 100).round(1)
+print(f"\nROI Stats:")
+print(f"  Min: {fmc_clean['ROI%'].min():.1f}%  "
+      f"Max: {fmc_clean['ROI%'].max():.1f}%  "
+      f"Avg: {fmc_clean['ROI%'].mean():.1f}%")
+
+# Chart
+funnel_labels = ["Impressions","Leads","TestDrives","Bookings"]
+funnel_values = [int(fmc["Impressions"].sum()), int(fmc["Leads"].sum()),
+                 int(fmc["TestDrives"].sum()), int(fmc["Bookings"].sum())]
+colors = ["#1F3864","#2E4A6E","#3A7CA5","#5BA4CF"]
+
+fig, ax = plt.subplots(figsize=(12, 5))
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+bars = ax.bar(range(len(funnel_labels)), funnel_values,
+              color=colors, width=0.5, zorder=2)
+for bar, val in zip(bars, funnel_values):
+    ax.text(bar.get_x() + bar.get_width()/2,
+            bar.get_height() * 1.15,
+            f"{val:,}", ha="center", va="bottom",
+            fontsize=10, fontweight="bold", color="#1E2A3A")
+
+ax.plot(range(len(funnel_values)), funnel_values, color="#F4C542",
+        marker="o", linewidth=2.5, markersize=8, zorder=3, label="Trend")
+
+ax.set_yscale("log")
+ax.set_ylabel("Count (Log Scale)", color="#1E2A3A", fontsize=11)
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+    lambda x, _: f"{int(x):,}" if x >= 1 else ""))
+
+ax.set_title("Fact_MarketingCampaign — Marketing Funnel",
+             fontsize=14, fontweight="bold", color="#1E2A3A", pad=15)
+ax.set_xticks(range(len(funnel_labels)))
+ax.set_xticklabels(funnel_labels, color="#1E2A3A", fontsize=11)
+ax.set_xlabel("Funnel Stage", color="#1E2A3A", fontsize=11)
+
+ax.tick_params(axis="x", colors="#1E2A3A")
+ax.tick_params(axis="y", colors="#1E2A3A")
+ax.spines["bottom"].set_visible(True)
+ax.spines["bottom"].set_color("#1E2A3A")
+ax.spines["left"].set_visible(True)
+ax.spines["left"].set_color("#1E2A3A")
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+ax.legend(facecolor="white", labelcolor="#1E2A3A", fontsize=10)
+
+plt.tight_layout()
+plt.show()
