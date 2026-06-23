@@ -1,0 +1,70 @@
+# 3. Fact_VehicleSales: SaleAmount Distribution
+sale_clean = fvs["SaleAmount"].dropna()
+sale_clean = sale_clean[(sale_clean >= sale_clean.quantile(0.01)) &
+                         (sale_clean <= sale_clean.quantile(0.99))]
+
+print("SaleAmount Statistics:")
+sale_stats = pd.DataFrame({
+    "Metric": ["Total Rows","Valid Rows (after cleaning)","Missing",
+               "Below $1,000","Above $200,000","Min","Max","Mean","Median","Std Dev"],
+    "Value":  [f"{len(fvs):,}",
+               f"{len(sale_clean):,}",
+               f"{fvs['SaleAmount'].isnull().sum():,} ({fvs['SaleAmount'].isnull().sum()/len(fvs)*100:.1f}%)",
+               f"{(fvs['SaleAmount']<1000).sum():,}",
+               f"{(fvs['SaleAmount']>200000).sum():,}",
+               f"${sale_clean.min():,.2f}",
+               f"${sale_clean.max():,.2f}",
+               f"${sale_clean.mean():,.2f}",
+               f"${sale_clean.median():,.2f}",
+               f"${sale_clean.std():,.2f}"]
+})
+sale_stats.index = range(1, len(sale_stats)+1)
+display(sale_stats)
+
+# Chart
+n_counts, bins = np.histogram(sale_clean, bins=40)
+bin_mids = 0.5 * (bins[:-1] + bins[1:])
+
+fig, ax = plt.subplots(figsize=(16, 5))
+fig.patch.set_facecolor("white")
+ax.set_facecolor("white")
+
+bars = ax.bar(bin_mids, n_counts, width=(bins[1]-bins[0])*0.9,
+              color="#2E4A6E", edgecolor="white", zorder=2)
+for bar, val in zip(bars, n_counts):
+    if val > 0:
+        ax.text(bar.get_x() + bar.get_width()/2,
+                bar.get_height() + max(n_counts)*0.01,
+                f"{int(val)}", ha="center", va="bottom",
+                fontsize=6.5, fontweight="bold", color="#1E2A3A", rotation=90)
+
+ax.plot(bin_mids, n_counts, color="#F4C542",
+        marker="o", linewidth=2.5, markersize=4, zorder=3, label="Trend")
+
+ax.set_title("Fact_VehicleSales — SaleAmount Distribution",
+             fontsize=14, fontweight="bold", color="#1E2A3A", pad=15)
+
+# X axis label for every bar 
+ax.set_xticks(bin_mids)
+ax.set_xticklabels(
+    [f"${x/1000:.0f}K" for x in bin_mids],
+    rotation=90, fontsize=6.5, color="#1E2A3A"
+)
+
+ax.tick_params(axis="x", colors="#1E2A3A", labelsize=6.5)
+ax.spines["bottom"].set_visible(True)
+ax.spines["bottom"].set_color("#1E2A3A")
+
+ax.set_xlabel("Sale Amount", color="#1E2A3A", fontsize=11)
+ax.set_ylabel("Frequency", color="#1E2A3A", fontsize=11)
+ax.yaxis.set_visible(True)
+ax.tick_params(axis="y", colors="#1E2A3A", labelsize=10)
+ax.spines["left"].set_visible(True)
+ax.spines["left"].set_color("#1E2A3A")
+ax.spines["top"].set_visible(False)
+ax.spines["right"].set_visible(False)
+ax.margins(y=0.3)
+ax.legend(facecolor="white", labelcolor="#1E2A3A", fontsize=10)
+
+plt.tight_layout()
+plt.show()
